@@ -2,6 +2,7 @@
 #include "Si1132.h"
 #include "Si70xx.h"
 #include "math.h"
+// TODO
 #include "rest_client.h"
 
 
@@ -72,6 +73,8 @@ double Si1132UVIndex = 0; //// UV Index scoring is as follows: 1-2  -> Low,
 double Si1132Visible = 0; //// Lux
 double Si1132InfraRed = 0; //// Lux
 
+
+// TODO
 MPU9150 mpu9150;
 bool ACCELOK = false;
 int cx, cy, cz, ax, ay, az, gx, gy, gz;
@@ -88,17 +91,32 @@ int sensorValue = 0;
 bool regularUpdate;
 bool sensorAttached = false;
 
+// TODO
 ApplicationWatchdog watchDog(60000, System.reset);
 
+// TODO
 Timer sleepTimer(360000, startSleep);
 
+// TODO
 bool isSleeping = false;
 
+// TODO
 RestClient client = RestClient("sccug-330-04.lancs.ac.uk",8000);
 
+// TODO
 const char* path = "/Cup";
 
+// TODO
 String coreID;
+
+int rank = 0;
+
+Thread* rankThread;
+
+//TODO
+os_thread_return_t rankDetect(void* param){
+
+}
 
 //// ***************************************************************************
 
@@ -147,13 +165,17 @@ void setup()
     // Initialize motion sensor input pin
     pinMode(inputPin, INPUT);
 
+    // TODO
     regularUpdate = true;
 
     System.enableReset();
 
     coreID = getCoreID();
 
+    // TODO
     sleepTimer.start();
+
+    rankThread = new Thread("rank", rankDetect);
 }
 
 void initialiseMPU9150()
