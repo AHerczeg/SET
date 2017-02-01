@@ -1,7 +1,6 @@
 #include "MPU9150.h"
 #include "Si1132.h"
 #include "Si70xx.h"
-#include "math.h"
 // TODO
 #include "rest_client.h"
 
@@ -14,6 +13,7 @@
 #define DEG_TO_RADIANS 0.0174533
 #define PI 3.1415926535
 #define ACCEL_SCALE 2 // +/- 2g
+#define ROLE_SIZE 11
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -88,34 +88,73 @@ int inputPin = D6; // PIR motion sensor. D6 goes HIGH when motion is detected an
 
 int sensorState = LOW;        // Start by assuming no motion detected
 int sensorValue = 0;
-bool regularUpdate;
 bool sensorAttached = false;
 
-// TODO
-ApplicationWatchdog watchDog(60000, System.reset);
 
-// TODO
-Timer sleepTimer(360000, startSleep);
-
-// TODO
-bool isSleeping = false;
-
-// TODO
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
 
-// TODO
-const char* path = "/Cup";
+const char* path = "/sensor";
 
-// TODO
-String coreID;
+String deviceID;
 
-int rank = 0;
+char rawRole[ROLE_SIZE];
 
-Thread* rankThread;
+String role;
 
-//TODO
-os_thread_return_t rankDetect(void* param){
+bool emptyFlag = true;
 
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} COLOUR;
+
+COLOUR ledColour = {0, 0, 0};
+
+uint8_t brightness = 100;
+
+int mode;
+
+Thread* debugThread;
+Thread* ledThread;
+
+os_thread_return_t debugListener(){
+  int incomingByte = 0;
+  for(;;){
+
+    if (Serial.available() > 0) {
+      // read the incoming byte:
+      incomingByte = Serial.read();
+
+      // say what you got:
+      Serial.print("I received: ");
+      Serial.println(incomingByte, DEC);
+    }
+  }
+}
+
+os_thread_return_t ledBlinking(){
+  for(;;){
+    switch(mode){
+
+      default: while(brightness > 0){
+                  brightness -= 5;
+                  if(brightness < 0)
+                    brightness = 0;
+                  RGB.brightness(brightness);
+                  delay (100);
+                }
+                delay(100);
+                while(brightness < 100){
+                  brightness += 5;
+                  if(brightness > 255)
+                    brightness = 255;
+                  RGB.brightness(brightness);
+                  delay (100);
+                }
+                delay(100);
+    }
+  }
 }
 
 //// ***************************************************************************
@@ -153,7 +192,7 @@ void setup()
 
     Wire.begin();  // Start up I2C, required for LSM303 communication
 
-    // diables interrupts
+    // enables interrupts
     interrupts();
 
     // initialises the IO pins
@@ -165,17 +204,39 @@ void setup()
     // Initialize motion sensor input pin
     pinMode(inputPin, INPUT);
 
-    // TODO
-    regularUpdate = true;
-
     System.enableReset();
 
-    coreID = getCoreID();
+    deviceID = System.deviceID();
 
-    // TODO
-    sleepTimer.start();
+    EEPROM.get(0, rawRole);
 
-    rankThread = new Thread("rank", rankDetect);
+    for(int i = 0; i < ROLE_SIZE; i++)
+    {
+      if(rawRole[i] != 0xFF){
+        role = String(rawRole);
+        emptyFlag = false;
+      }
+    }
+    if(emptyFlag){
+      role = "unassigned";
+      role.toCharArray(rawRole, ROLE_SIZE);
+      EEPROM.put(0, rawRole);
+    }
+
+    EEPROM.get(11, ledColour);
+
+    RGB.control(true);
+
+    RGB.color(ledColour.r, ledColour.g, ledColour.b);
+
+    RGB.brightness(brightness);
+
+    ledThread = new Thread("ledBlinking", ledBlinking);
+
+    debugThread = new Thread("debug", debugListener);
+
+    //if(sensorValue == HIGH)
+      //sensorAttached = true;
 }
 
 void initialiseMPU9150()
@@ -239,160 +300,26 @@ void loop(void)
     readWeatherSi7020();
     readSi1132Sensor();
 
-    RestClient client = RestClient("sccug-330-04.lancs.ac.uk",8000);
-
-    const char* path = "/Logs";
-
     String tempStr = "";
     double sound = readSoundLevel();
-    bool motionChange = false;
-    time_t time = Time.minute();
-    bool runUpdate =  ( (int)time == 0 || (int)time == 30);
 
-    if (!runUpdate)
-      regularUpdate = true;
-
-    //regularUpdate = (runUpdate && regularUpdate);
-
-    String sensorString = tempStr+"{\"CoreID\":\"" + coreID + "\"";
-    double diff = oldTmp-Si7020Temperature;
-
-    bool startUpdate = (runUpdate && regularUpdate);
-
-
-    // THESE TWO MUST ALWAYS BE ON TOP! V
-
+    String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
 
     sensorValue = digitalRead(inputPin);
 
     if(sensorValue == HIGH)
       sensorAttached = true;
 
-    if(sensorAttached)
-    {
-      if (sensorValue == HIGH && sensorState == LOW)   // If the input pin is HIGH turn LED ON
-      {
-         sensorString =  sensorString + ", \"Motion\": 1";
-         Particle.publish("Team3Motion", "1");
-         sensorState = HIGH;                 // preserves current sensor state
-         change = true;
-      } else if (sensorValue == LOW && sensorState == HIGH) {
-          sensorString = sensorString + ", \"Motion\": 0";
-          Particle.publish("Team3Motion", "0");
-          sensorState = LOW;                   // preserves current sensor state
-          change = true;
-      }
-
-      if(startUpdate && !change)
-      {
-         if (sensorState == HIGH)
-          sensorString = sensorString + ", \"Motion\": 1";
-         else
-          sensorString = sensorString + ", \"Motion\": 0";
-      }
-    }
-
-    // THESE TWO MUST ALWAYS BE ON TOP! ^
-
-    String check = getChange(Si7020Temperature, oldTmp, THRESHOLD, "Temp", startUpdate);
-    if(check != "no"){
-      sensorString = sensorString + check;
-      change = true;
-    }
-
-
-    check = getChange(Si7020Humidity, oldHmd, THRESHOLD, "Humidity", startUpdate);
-    if(check != "no"){
-      sensorString = sensorString + check;
-      change = true;
-    }
-
-    check = getChange(Si1132Visible, oldVisible, THRES_L, "Light", startUpdate);
-    if(check != "no"){
-      sensorString = sensorString + check;
-      change = true;
-    }
-
-    check = getChange(sound, oldSound, THRES_S, "Sound", startUpdate);
-    if(check != "no"){
-      sensorString = sensorString + check;
-      change = true;
-    }
-
-    sensorString = sensorString + "}";
-    //WiFi RSSI guide: >50, it's in zone 1; between 50 and 45, in zone 2; <45, in zone 3
-
-    Serial.println(sensorString);
     String responseString = "";
 
-    // || time.minute() == 0 || time.minute() == 30
+    //client.post(path, (const char*) sensorString, &responseString);
 
-    //Particle.publish("regularUpdate", sensorString, PRIVATE);
-
-    if(change)
-    {
-      sleepTimer.reset();
-      if(isSleeping)
-        endSleep();
-      client.post(path, (const char*) sensorString, &responseString);
-      change = false;
-
-    }
-
-    sensorString = sensorString+" "+ (sound);
-    //Particle.publish("photonSensorData",sensorString, PRIVATE);
-
-    String rTime = tempStr + "" + (int)time;
-
-    if(startUpdate)
-      regularUpdate = false;
+    //Serial.println("---------");
+    //Serial.println(sensorString);
+    //Serial.println(responseString);
 
     delay(500);
-
-    watchDog.checkin();
 }
-
-String getChange(double &current, double &old, int thres, String name, bool start)
-{
-  int diff = 0;
-  double d = 0;
-  String sensorString = "no";
-
-  if(name == "Sound")
-    d = lround((current - old)*1000);
-  else
-    d = current - old;
-
-  diff = abs(d);
-
-  if(diff > thres || start)
-  {
-    old = current;
-    change = true;
-    sensorString =  ", \"" + name + "\":"+ current;
-  }
-
-  return sensorString;
-}
-
-String getCoreID(){
-  String coreIdentifier = "";
-  char id[12];
-  memcpy(id, (char *)ID1, 12);
-  char hex_digit;
-  for (int i = 0; i < 12; ++i) {
-    hex_digit = 48 + (id[i] >> 4);
-    if (57 < hex_digit)
-      hex_digit += 39;
-    coreIdentifier = coreIdentifier + hex_digit;
-    hex_digit = 48 + (id[i] & 0xf);
-    if (57 < hex_digit)
-      hex_digit += 39;
-    coreIdentifier = coreIdentifier + hex_digit;
-  }
-  return coreIdentifier;
-}
-
 
 int readWeatherSi7020()
 {
@@ -448,24 +375,4 @@ float readSoundLevel()
 
     //return 1;
     return SOUNDV;
-}
-
-void startSleep(){
-  sleepTimer.stop();
-  String nameString = coreID + "Sleep start";
-  Particle.publish("photonSensorData",nameString, PRIVATE);
-  isSleeping = true;
-  System.sleep(1);
-}
-
-void endSleep(){
-  WiFi.on();
-  WiFi.connect();
-  Spark.connect();
-  Particle.process();
-  delay(500);
-  String nameString = coreID + "Sleep end";
-  Particle.publish("photonSensorData",nameString, PRIVATE);
-  isSleeping = false;
-  sleepTimer.reset();
 }
