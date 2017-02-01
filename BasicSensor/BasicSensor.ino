@@ -1,7 +1,6 @@
 #include "MPU9150.h"
 #include "Si1132.h"
 #include "Si70xx.h"
-// TODO
 #include "rest_client.h"
 
 
@@ -74,13 +73,10 @@ double Si1132Visible = 0; //// Lux
 double Si1132InfraRed = 0; //// Lux
 
 
-// TODO
 MPU9150 mpu9150;
 bool ACCELOK = false;
 int cx, cy, cz, ax, ay, az, gx, gy, gz;
 double tm; //// Celsius
-bool change = false;
-
 Si1132 si1132 = Si1132();
 
 int inputPin = D6; // PIR motion sensor. D6 goes HIGH when motion is detected and LOW when
@@ -111,49 +107,39 @@ typedef struct {
 
 COLOUR ledColour = {0, 0, 0};
 
-uint8_t brightness = 100;
+uint8_t brightness = 0;
 
-int mode;
+bool debugFlag = false;
 
 Thread* debugThread;
 Thread* ledThread;
 
 os_thread_return_t debugListener(){
-  int incomingByte = 0;
+  String buffer = "";
+  String tempStr = "";
   for(;;){
-
-    if (Serial.available() > 0) {
-      // read the incoming byte:
-      incomingByte = Serial.read();
-
-      // say what you got:
-      Serial.print("I received: ");
-      Serial.println(incomingByte, DEC);
+    if(Serial.available() > 0){
+      while (Serial.available() > 0) {
+        char incomingByte = (char)(Serial.read());
+        if(incomingByte != 10){
+          buffer = tempStr + buffer + incomingByte;
+        }
+      }
+      Serial.println("Incoming serial: " + buffer);
+      if(buffer.compareTo("debug") == 0){
+        debug();
+      }
+      buffer = "";
+      delay(100);
     }
   }
 }
 
 os_thread_return_t ledBlinking(){
   for(;;){
-    switch(mode){
-
-      default: while(brightness > 0){
-                  brightness -= 5;
-                  if(brightness < 0)
-                    brightness = 0;
-                  RGB.brightness(brightness);
-                  delay (100);
-                }
-                delay(100);
-                while(brightness < 100){
-                  brightness += 5;
-                  if(brightness > 255)
-                    brightness = 255;
-                  RGB.brightness(brightness);
-                  delay (100);
-                }
-                delay(100);
-    }
+    if(!debugFlag)
+      blink(100, 5, 100);
+    delay(100);
   }
 }
 
@@ -280,45 +266,9 @@ void initialiseMPU9150()
 
 void loop(void)
 {
-    //// prints device version and address
-
-    //Serial.print("Device version: "); Serial.println(System.version());
-    //Serial.print("Device ID: "); Serial.println(System.deviceID());
-    //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
-
-    //// ***********************************************************************
-
-    //// powers up sensors
-    digitalWrite(I2CEN, HIGH);
-    digitalWrite(ALGEN, HIGH);
-
-    //// allows sensors time to warm up
-    delay(SENSORDELAY);
-
-    //// ***********************************************************************
-
-    readWeatherSi7020();
-    readSi1132Sensor();
-
-    String tempStr = "";
-    double sound = readSoundLevel();
-
-    String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
-
-    sensorValue = digitalRead(inputPin);
-
-    if(sensorValue == HIGH)
-      sensorAttached = true;
-
-    String responseString = "";
-
-    //client.post(path, (const char*) sensorString, &responseString);
-
-    //Serial.println("---------");
-    //Serial.println(sensorString);
-    //Serial.println(responseString);
-
-    delay(500);
+    while(!debugFlag){
+      code();
+    }
 }
 
 int readWeatherSi7020()
@@ -375,4 +325,133 @@ float readSoundLevel()
 
     //return 1;
     return SOUNDV;
+}
+
+void blink(int level, int step, int speed){
+  while(brightness < level){
+    brightness += step;
+    if(brightness > 255)
+      brightness = 255;
+    RGB.brightness(brightness);
+    delay (speed);
+  }
+  delay(speed);
+  while(brightness > 0){
+    brightness -= step;
+    if(brightness < 0)
+      brightness = 0;
+    RGB.brightness(brightness);
+    delay (speed);
+  }
+  delay(speed);
+}
+
+void code(){
+  //// prints device version and address
+
+  //Serial.print("Device version: "); Serial.println(System.version());
+  //Serial.print("Device ID: "); Serial.println(System.deviceID());
+  //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
+
+  //// ***********************************************************************
+
+  //// powers up sensors
+  digitalWrite(I2CEN, HIGH);
+  digitalWrite(ALGEN, HIGH);
+
+  //// allows sensors time to warm up
+  delay(SENSORDELAY);
+
+  //// ***********************************************************************
+
+  readWeatherSi7020();
+  readSi1132Sensor();
+
+  String tempStr = "";
+  double sound = readSoundLevel();
+
+  String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
+
+  sensorValue = digitalRead(inputPin);
+
+  if(sensorValue == HIGH)
+    sensorAttached = true;
+
+  String responseString = "";
+
+  //client.post(path, (const char*) sensorString, &responseString);
+
+  Serial.println("---------");
+  //Serial.println(sensorString);
+  //Serial.println(responseString);
+
+  delay(500);
+}
+
+void debug(){
+
+  debugFlag = true;
+
+  delay(500);
+
+  noInterrupts();
+
+  Serial.println("DEBUG_START");
+
+  RGB.brightness(255);
+
+  RGB.color(0, 0, 0);
+  delay(500);
+  RGB.color(255, 0, 0);
+  delay(500);
+  RGB.color(0, 255, 0);
+  delay(500);
+  RGB.color(0, 0, 255);
+  delay(500);
+  RGB.color(255, 255, 0);
+  delay(500);
+  RGB.color(255, 0, 255);
+  delay(500);
+  RGB.color(0, 255, 255);
+  delay(500);
+  RGB.color(255, 255, 255);
+  delay(500);
+
+  blink(255, 15, 50);
+  blink(255, 15, 50);
+
+  Serial.println("  RGB: GO");
+
+  byte testByte = rand() % 255 + 1;
+
+  int testPos = rand() % 2047 + 1;
+
+  byte byteHolder = EEPROM.read(testPos);
+
+  EEPROM.put(testPos, testByte);
+
+  if(EEPROM.read(testPos) == testByte)
+    Serial.println("  EEPROM: GO");
+  else
+    Serial.println("  EEPROM: NOGO");
+
+  EEPROM.put(testPos, byteHolder);
+
+  code();
+  Serial.println("  LOOP: GO");
+
+  //  TODO
+  //  Server check
+  //  Sensors check
+  //  Wifi check
+  //  Serial check
+  //  Loop check;
+
+  RGB.color(ledColour.r, ledColour.g, ledColour.b);
+
+  debugFlag = false;
+
+  Serial.println("DEBUG_END");
+
+  interrupts();
 }
