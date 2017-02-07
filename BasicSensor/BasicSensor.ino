@@ -113,17 +113,18 @@ bool debugFlag = false;
 
 Thread* debugThread;
 Thread* ledThread;
+Thread* advertiseThread;
 
 os_thread_return_t debugListener(){
   String buffer = "";
   String tempStr = "";
   for(;;){
     if(Serial.available() > 0){
+      Serial.flush();
       while (Serial.available() > 0) {
-        char incomingByte = (char)(Serial.read());
-        if(incomingByte != 10){
-          buffer = tempStr + buffer + incomingByte;
-        }
+        if(Serial.peek() != 10){
+          buffer = tempStr + buffer + (char)(Serial.read());
+        } else {Serial.read();}
       }
       Serial.println("Incoming serial: " + buffer);
       if(buffer.compareTo("debug") == 0){
@@ -140,6 +141,13 @@ os_thread_return_t ledBlinking(){
     if(!debugFlag)
       blink(100, 5, 100);
     delay(100);
+  }
+}
+
+os_thread_return_t advertise(){
+  for(;;){
+    Particle.publish("detectChan", deviceID, PRIVATE);
+    delay(36000);
   }
 }
 
@@ -221,6 +229,12 @@ void setup()
 
     debugThread = new Thread("debug", debugListener);
 
+    advertiseThread = new Thread("advertise", advertise);
+
+    String tempStr = "";
+    String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
+    client.post(path, (const char*) sensorString);
+
     //if(sensorValue == HIGH)
       //sensorAttached = true;
 }
@@ -269,6 +283,70 @@ void loop(void)
     while(!debugFlag){
       code();
     }
+}
+
+void code(){
+  //// prints device version and address
+
+  //Serial.print("Device version: "); Serial.println(System.version());
+  //Serial.print("Device ID: "); Serial.println(System.deviceID());
+  //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
+
+  //// ***********************************************************************
+
+  //// powers up sensors
+  digitalWrite(I2CEN, HIGH);
+  digitalWrite(ALGEN, HIGH);
+
+  //// allows sensors time to warm up
+  delay(SENSORDELAY);
+
+  //// ***********************************************************************
+
+  readWeatherSi7020();
+  readSi1132Sensor();
+  double sound = readSoundLevel();
+
+  Time.setFormat(TIME_FORMAT_ISO8601_FULL);
+
+  path = "/sensor_history";
+
+  String tempStr = "";
+  String timestamp = timestampFormat();
+
+  String sensorData = tempStr+"{temperature" + String(Si7020Temperature) + ", humidity:" + String(Si7020Humidity) + ",light:" + String(Si1132Visible) + "}";
+
+  String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
+
+  String responseString = "";
+
+  client.post(path, (const char*) sensorString, &responseString);
+
+  Serial.println("---------");
+  //Serial.println(sensorString);
+  //Serial.println(responseString);
+
+  delay(1000);
+}
+
+
+void readMPU9150()
+{
+    //// reads the MPU9150 sensor values. Values are read in order of temperature,
+    //// compass, Gyro, Accelerometer
+
+    tm = ( (double) mpu9150.readSensor(mpu9150._addr_motion, MPU9150_TEMP_OUT_L, MPU9150_TEMP_OUT_H) + 12412.0 ) / 340.0;
+    cx = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_CMPS_XOUT_L, MPU9150_CMPS_XOUT_H);  //Compass_X
+    cy = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_CMPS_YOUT_L, MPU9150_CMPS_YOUT_H);  //Compass_Y
+    cz = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_CMPS_ZOUT_L, MPU9150_CMPS_ZOUT_H);  //Compass_Z
+    ax = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_ACCEL_XOUT_L, MPU9150_ACCEL_XOUT_H);
+    ay = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_ACCEL_YOUT_L, MPU9150_ACCEL_YOUT_H);
+    az = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_ACCEL_ZOUT_L, MPU9150_ACCEL_ZOUT_H);
+    gx = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_GYRO_XOUT_L, MPU9150_GYRO_XOUT_H);
+    gy = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_GYRO_YOUT_L, MPU9150_GYRO_YOUT_H);
+    gz = mpu9150.readSensor(mpu9150._addr_motion, MPU9150_GYRO_ZOUT_L, MPU9150_GYRO_ZOUT_H);
+
+
 }
 
 int readWeatherSi7020()
@@ -346,57 +424,47 @@ void blink(int level, int step, int speed){
   delay(speed);
 }
 
-void code(){
-  //// prints device version and address
-
-  //Serial.print("Device version: "); Serial.println(System.version());
-  //Serial.print("Device ID: "); Serial.println(System.deviceID());
-  //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
-
-  //// ***********************************************************************
-
-  //// powers up sensors
-  digitalWrite(I2CEN, HIGH);
-  digitalWrite(ALGEN, HIGH);
-
-  //// allows sensors time to warm up
-  delay(SENSORDELAY);
-
-  //// ***********************************************************************
-
-  readWeatherSi7020();
-  readSi1132Sensor();
-
+String timestampFormat(){
   String tempStr = "";
-  double sound = readSoundLevel();
+  String timestamp = tempStr + String(Time.year()) + "-";
+  if(Time.month() < 10)
+    timestamp += tempStr + "0" + String(Time.month()) + "-";
+  else
+    timestamp += tempStr + String(Time.month()) + "-";
+  if(Time.day() < 10)
+    timestamp += tempStr + "0" + String(Time.day()) + "T";
+  else
+    timestamp += tempStr + String(Time.day()) + "T";
+  if(Time.hour() < 10)
+    timestamp += tempStr + "0" + String(Time.hour()) + ":";
+  else
+    timestamp += tempStr + String(Time.hour()) + ":";
+  if(Time.minute() < 10)
+    timestamp += tempStr + "0" + String(Time.minute()) + ":";
+  else
+    timestamp += tempStr + String(Time.minute()) + ":";
+  if(Time.second() < 10)
+    timestamp += tempStr + "0" + String(Time.second());
+  else
+    timestamp += tempStr + String(Time.second());
 
-  String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
-
-  sensorValue = digitalRead(inputPin);
-
-  if(sensorValue == HIGH)
-    sensorAttached = true;
-
-  String responseString = "";
-
-  //client.post(path, (const char*) sensorString, &responseString);
-
-  Serial.println("---------");
-  //Serial.println(sensorString);
-  //Serial.println(responseString);
-
-  delay(500);
+  return timestamp;
 }
 
 void debug(){
 
   debugFlag = true;
 
-  delay(500);
+  delay(1000);
 
   noInterrupts();
 
   Serial.println("DEBUG_START");
+
+  if(Serial.isConnected())
+    Serial.println("  SERIAL: GO");
+  else
+    Serial.println("  SERIAL: NOGO");
 
   RGB.brightness(255);
 
@@ -422,9 +490,9 @@ void debug(){
 
   Serial.println("  RGB: GO");
 
-  byte testByte = rand() % 255 + 1;
+  byte testByte = random(255);
 
-  int testPos = rand() % 2047 + 1;
+  int testPos = random(2047);
 
   byte byteHolder = EEPROM.read(testPos);
 
@@ -437,15 +505,41 @@ void debug(){
 
   EEPROM.put(testPos, byteHolder);
 
-  code();
-  Serial.println("  LOOP: GO");
+  if(WiFi.connecting() || !(WiFi.ready()) )
+    Serial.println("  WIFI: NOGO");
+  else
+    Serial.println("  WIFI: GO");
 
-  //  TODO
-  //  Server check
-  //  Sensors check
-  //  Wifi check
-  //  Serial check
-  //  Loop check;
+  if(Particle.connected())
+    Serial.println("  CLOUD: GO");
+  else
+    Serial.println("  CLOUD: NOGO");
+
+  const char* pathHolder = path;
+  path = "/test";
+
+  String testString = "test", responseString = "";
+  client.post(path, (const char*) testString, &responseString);
+  if(responseString.length() > 0)
+    Serial.println("  SERVER: GO");
+  else
+    Serial.println("  SERVER: NOGO");
+
+  Serial.println("---------- LOOP START ----------");
+  unsigned long start = millis();
+  code();
+  unsigned long end = millis();
+  Serial.println("---------- LOOP END ----------");
+  int totalTime = end-start;
+  Serial.println("  LOOP: GO");
+  String tempStr = "        Runtime: ";
+  tempStr += "" + String(totalTime) + "ms";
+  Serial.println(tempStr);
+
+  if(mpu9150.begin(mpu9150._addr_motion))
+    Serial.println("  CLOUD: GO");
+  else
+    Serial.println("  CLOUD: NOGO");
 
   RGB.color(ledColour.r, ledColour.g, ledColour.b);
 
