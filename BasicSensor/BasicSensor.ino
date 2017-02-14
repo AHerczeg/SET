@@ -13,6 +13,11 @@
 #define PI 3.1415926535
 #define ACCEL_SCALE 2 // +/- 2g
 #define ROLE_SIZE 11
+#define TEMP_SENSOR 0x80
+#define HUM_SENSOR 0x40
+#define LIGHT_SENSOR 0x20
+#define ACCEL_SENSOR 0x10
+#define MOTION_SENSOR 0x08
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -221,6 +226,11 @@ void setup()
 
     EEPROM.get(11, ledColour);
 
+
+    Serial.println(mpu9150.begin(mpu9150._addr_motion));
+    Serial.println(si7020.begin());
+    Serial.println(Wire.begin());
+
     RGB.control(true);
 
     RGB.color(ledColour.r, ledColour.g, ledColour.b);
@@ -286,14 +296,14 @@ void loop(void)
       //code();
       Serial.println("Start");
       Si70xx si7020;
-      Serial.println(mpu9150.begin(mpu9150._addr_motion));
-      Serial.println(si7020.begin());
-      Serial.println(Wire.begin());
+
       Serial.println("End");
       delay(5000);
     }
 }
 
+
+// The code is outside of the loop so we can control when it's being ran
 void code(){
   //// prints device version and address
 
@@ -338,7 +348,7 @@ void code(){
   delay(1000);
 }
 
-
+// Read sound measurements
 void readMPU9150()
 {
     //// reads the MPU9150 sensor values. Values are read in order of temperature,
@@ -358,6 +368,7 @@ void readMPU9150()
 
 }
 
+// Reas temperature and humidity measurements
 int readWeatherSi7020()
 {
     Si70xx si7020;
@@ -414,6 +425,7 @@ float readSoundLevel()
     return SOUNDV;
 }
 
+// Slowly blinks the LED
 void blink(int level, int step, int speed){
   while(brightness < level){
     brightness += step;
@@ -433,6 +445,7 @@ void blink(int level, int step, int speed){
   delay(speed);
 }
 
+// Converts time into specific format
 String timestampFormat(){
   String tempStr = "";
   String timestamp = tempStr + String(Time.year()) + "-";
@@ -460,8 +473,10 @@ String timestampFormat(){
   return timestamp;
 }
 
+// Start debugging
 void debug(){
 
+  // Pause loop, wait for any running process to finish
   debugFlag = true;
 
   delay(1000);
@@ -470,11 +485,13 @@ void debug(){
 
   Serial.println("DEBUG_START");
 
+  // Test serial
   if(Serial.isConnected())
     Serial.println("  SERIAL: GO");
   else
     Serial.println("  SERIAL: NOGO");
 
+  // Test LED
   RGB.brightness(255);
 
   RGB.color(0, 0, 0);
@@ -499,12 +516,10 @@ void debug(){
 
   Serial.println("  RGB: GO");
 
+  // Test EEPROM
   byte testByte = random(255);
-
   int testPos = random(2047);
-
   byte byteHolder = EEPROM.read(testPos);
-
   EEPROM.put(testPos, testByte);
 
   if(EEPROM.read(testPos) == testByte)
@@ -514,16 +529,19 @@ void debug(){
 
   EEPROM.put(testPos, byteHolder);
 
+  // Test WiFi
   if(WiFi.connecting() || !(WiFi.ready()) )
     Serial.println("  WIFI: NOGO");
   else
     Serial.println("  WIFI: GO");
 
+  // Test Particle cloud connection
   if(Particle.connected())
     Serial.println("  CLOUD: GO");
   else
     Serial.println("  CLOUD: NOGO");
 
+  // Test server connection
   const char* pathHolder = path;
   path = "/test";
 
@@ -534,6 +552,25 @@ void debug(){
   else
     Serial.println("  SERVER: NOGO");
 
+  // List all recognised sensors
+  Serial.println("  SENSORS")
+  if((sensors & TEMP_SENSOR) > 0){
+    Serial.println("    TEMPERATURE")
+  }
+  if((sensors & HUM_SENSOR) > 0){
+    Serial.println("    HUMIDITIY")
+  }
+  if((sensors & LIGHT_SENSOR) > 0){
+    Serial.println("    LIGHT")
+  }
+  if((sensors & ACCEL_SENSOR) > 0){
+    Serial.println("    ACCELERATION")
+  }
+  if((sensors & MOTION_SENSOR) > 0){
+    Serial.println("    MOTION")
+  }
+
+  // Run the main code once, measure runtime
   Serial.println("---------- LOOP START ----------");
   unsigned long start = millis();
   code();
@@ -545,11 +582,7 @@ void debug(){
   tempStr += "" + String(totalTime) + "ms";
   Serial.println(tempStr);
 
-  if(mpu9150.begin(mpu9150._addr_motion))
-    Serial.println("  CLOUD: GO");
-  else
-    Serial.println("  CLOUD: NOGO");
-
+  // End debugging
   RGB.color(ledColour.r, ledColour.g, ledColour.b);
 
   debugFlag = false;

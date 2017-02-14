@@ -1,16 +1,23 @@
+// *******************************************************
+// * A basic template of the required code for debugging *
+// *******************************************************
+
+
 #include "MPU9150.h"
 #include "Si1132.h"
 #include "Si70xx.h"
 #include "rest_client.h"
 
 // ----------------------- //
+
+// Define the variable bit flag
 #define TEMP_SENSOR 0x80
 #define HUM_SENSOR 0x40
 #define LIGHT_SENSOR 0x20
 #define ACCEL_SENSOR 0x10
 #define MOTION_SENSOR 0x08
 
-
+// The structure used for setting the LED light
 typedef struct {
     uint8_t r;
     uint8_t g;
@@ -23,12 +30,14 @@ uint8_t brightness = 0;
 
 bool debugFlag = false;
 
+// Flags of all sensors, initially set to 00000000
 uint8_t sensors = 0x00;
 
 Thread* debugThread;
 Thread* ledThread;
 Thread* advertiseThread;
 
+// Thread for listening to the serial
 os_thread_return_t debugListener(){
   String buffer = "";
   String tempStr = "";
@@ -50,6 +59,7 @@ os_thread_return_t debugListener(){
   }
 }
 
+// Thread for blinking the LED
 os_thread_return_t ledBlinking(){
   for(;;){
     if(!debugFlag)
@@ -72,8 +82,11 @@ void setup()
 }
 
 // -------------------------------
+
+// Start debugging
 void debug(){
 
+  // Pause loop, wait for any running process to finish
   debugFlag = true;
 
   delay(1000);
@@ -82,11 +95,13 @@ void debug(){
 
   Serial.println("DEBUG_START");
 
+  // Test serial
   if(Serial.isConnected())
     Serial.println("  SERIAL: GO");
   else
     Serial.println("  SERIAL: NOGO");
 
+  // Test LED
   RGB.brightness(255);
 
   RGB.color(0, 0, 0);
@@ -111,12 +126,10 @@ void debug(){
 
   Serial.println("  RGB: GO");
 
+  // Test EEPROM
   byte testByte = random(255);
-
   int testPos = random(2047);
-
   byte byteHolder = EEPROM.read(testPos);
-
   EEPROM.put(testPos, testByte);
 
   if(EEPROM.read(testPos) == testByte)
@@ -126,16 +139,19 @@ void debug(){
 
   EEPROM.put(testPos, byteHolder);
 
+  // Test WiFi
   if(WiFi.connecting() || !(WiFi.ready()) )
     Serial.println("  WIFI: NOGO");
   else
     Serial.println("  WIFI: GO");
 
+  // Test Particle cloud connection
   if(Particle.connected())
     Serial.println("  CLOUD: GO");
   else
     Serial.println("  CLOUD: NOGO");
 
+  // Test server connection
   const char* pathHolder = path;
   path = "/test";
 
@@ -146,6 +162,7 @@ void debug(){
   else
     Serial.println("  SERVER: NOGO");
 
+  // List all recognised sensors
   Serial.println("  SENSORS")
   if((sensors & TEMP_SENSOR) > 0){
     Serial.println("    TEMPERATURE")
@@ -163,6 +180,7 @@ void debug(){
     Serial.println("    MOTION")
   }
 
+  // Run the main code once, measure runtime
   Serial.println("---------- LOOP START ----------");
   unsigned long start = millis();
   code();
@@ -174,11 +192,7 @@ void debug(){
   tempStr += "" + String(totalTime) + "ms";
   Serial.println(tempStr);
 
-  if(mpu9150.begin(mpu9150._addr_motion))
-    Serial.println("  CLOUD: GO");
-  else
-    Serial.println("  CLOUD: NOGO");
-
+  // End debugging
   RGB.color(ledColour.r, ledColour.g, ledColour.b);
 
   debugFlag = false;
