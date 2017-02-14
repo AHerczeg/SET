@@ -111,7 +111,7 @@ uint8_t brightness = 0;
 
 bool debugFlag = false;
 
-uint8_t sensors = 0x00000000;
+uint8_t sensors = 0x00;
 
 Thread* debugThread;
 Thread* ledThread;
