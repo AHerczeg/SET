@@ -1,7 +1,10 @@
 import sys
 import glob
 import serial
+import time
 
+ser = serial.Serial("COM3")
+ser.close()
 def serial_ports():
     """ Lists serial port names
 
@@ -23,13 +26,36 @@ def serial_ports():
     result = []
     for port in ports:
         try:
-            s = serial.Serial(port)
-            s.close()
-            result.append(port)
+            out = ''
+            ser = serial.Serial(port)
+            ser.baudrate = 9600
+            text = "scanning"
+            ser.write(text.encode())
+            time.sleep(1)
+            while ser.inWaiting() > 0:
+                out = ser.readline()
+            ser.close()
+            if(out.decode()):
+                result.append(port)
         except (OSError, serial.SerialException):
             pass
+
+
     return result
 
-if __name__ == '__main__':
-    print(serial_ports())
-
+#if __name__ == '__main__':
+#    print(serial_ports())
+portList = serial_ports()
+print(portList)
+for port in portList:
+    out = ''
+    ser = serial.Serial(port)
+    ser.baudrate = 9600
+    text = "debug"
+    ser.write(text.encode())
+    time.sleep(1)
+    while (out.strip() != "DEBUG_END"):
+        out = ser.readline()
+        out = out.decode()
+        print(out)
+    ser.close()

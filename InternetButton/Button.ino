@@ -1,6 +1,9 @@
 #include "InternetButton.h"
 #include "rest_client.h"
 
+#define GREEN {0, 255, 0}
+#define YELLOW {255, 255, 0}
+#define RED {255, 0, 0}
 
 InternetButton b = InternetButton();
 
@@ -12,9 +15,6 @@ typedef struct {
 
 COLOUR ledColour = {0, 0, 0};
 
-COLOUR green = {0, 1, 0};
-COLOUR yellow = {1, 1, 0};
-COLOUR red = {1, 0, 0};
 
 int brightness = 0;
 
@@ -39,25 +39,27 @@ os_thread_return_t buttonListener(){
 os_thread_return_t blinking(){
   for(;;){
     switch(securityLevel){
-      case 0: ledColour = green;
+      case 0: ledColour = GREEN;
               break;
-      case 1: ledColour = yellow;
+      case 1: ledColour = YELLOW;
               break;
-      case 2: ledColour = red;
+      case 2: ledColour = RED;
               break;
     }
     while(brightness < 255){
       brightness += 5;
       if(brightness > 255)
         brightness = 255;
-      b.allLedsOn(ledColour.r * brightness,ledColour.g * brightness,ledColour.b * brightness);
+      b.setBrightness(brightness);
+      b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
       delay ((3 - securityLevel) * 10);
     }
     while(brightness > 0){
       brightness -= 5;
       if(brightness < 0)
         brightness = 0;
-      b.allLedsOn(ledColour.r * brightness,ledColour.g * brightness,ledColour.b * brightness);
+      b.setBrightness(brightness);
+      b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
       delay ((3 - securityLevel) * 10);
     }
     delay(500);
@@ -67,9 +69,10 @@ os_thread_return_t blinking(){
 void setup() {
     Serial.begin(9600);
     b.begin();
-    ledColour = green;
+    ledColour = GREEN;
     buttonThread = new Thread("buttonListener", buttonListener);
     blinkingThread = new Thread("blinking", blinking);
+    b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
 }
 
 

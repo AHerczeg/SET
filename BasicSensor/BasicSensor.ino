@@ -136,9 +136,11 @@ os_thread_return_t debugListener(){
       Serial.println("Incoming serial: " + buffer);
       if(buffer.compareTo("debug") == 0){
         debug();
+      } else if (buffer.compareTo("scanning") == 0){
+        Serial.println("response");
       }
+
       buffer = "";
-      delay(100);
     }
   }
 }
@@ -226,11 +228,6 @@ void setup()
 
     EEPROM.get(11, ledColour);
 
-
-    Serial.println(mpu9150.begin(mpu9150._addr_motion));
-    Serial.println(si7020.begin());
-    Serial.println(Wire.begin());
-
     RGB.control(true);
 
     RGB.color(ledColour.r, ledColour.g, ledColour.b);
@@ -294,10 +291,6 @@ void loop(void)
 {
     while(!debugFlag){
       //code();
-      Serial.println("Start");
-      Si70xx si7020;
-
-      Serial.println("End");
       delay(5000);
     }
 }
@@ -333,7 +326,7 @@ void code(){
   String tempStr = "";
   String timestamp = timestampFormat();
 
-  String sensorData = tempStr+"{temperature" + String(Si7020Temperature) + ", humidity:" + String(Si7020Humidity) + ",light:" + String(Si1132Visible) + "}";
+  String sensorData = tempStr+"{\"temperature\":" + String(Si7020Temperature) + ", \"humidity\":" + String(Si7020Humidity) + ",\"light\":" + String(Si1132Visible) + "}";
 
   String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
 
@@ -342,8 +335,8 @@ void code(){
   client.post(path, (const char*) sensorString, &responseString);
 
   Serial.println("---------");
-  //Serial.println(sensorString);
-  //Serial.println(responseString);
+  Serial.println(sensorString);
+  Serial.println(responseString);
 
   delay(1000);
 }
@@ -495,21 +488,21 @@ void debug(){
   RGB.brightness(255);
 
   RGB.color(0, 0, 0);
-  delay(500);
+  delay(1000);
   RGB.color(255, 0, 0);
-  delay(500);
+  delay(1000);
   RGB.color(0, 255, 0);
-  delay(500);
+  delay(1000);
   RGB.color(0, 0, 255);
-  delay(500);
+  delay(1000);
   RGB.color(255, 255, 0);
-  delay(500);
+  delay(1000);
   RGB.color(255, 0, 255);
-  delay(500);
+  delay(1000);
   RGB.color(0, 255, 255);
-  delay(500);
+  delay(1000);
   RGB.color(255, 255, 255);
-  delay(500);
+  delay(1000);
 
   blink(255, 15, 50);
   blink(255, 15, 50);
@@ -553,21 +546,21 @@ void debug(){
     Serial.println("  SERVER: NOGO");
 
   // List all recognised sensors
-  Serial.println("  SENSORS")
+  Serial.println("  SENSORS");
   if((sensors & TEMP_SENSOR) > 0){
-    Serial.println("    TEMPERATURE")
+    Serial.println("    TEMPERATURE");
   }
   if((sensors & HUM_SENSOR) > 0){
-    Serial.println("    HUMIDITIY")
+    Serial.println("    HUMIDITIY");
   }
   if((sensors & LIGHT_SENSOR) > 0){
-    Serial.println("    LIGHT")
+    Serial.println("    LIGHT");
   }
   if((sensors & ACCEL_SENSOR) > 0){
-    Serial.println("    ACCELERATION")
+    Serial.println("    ACCELERATION");
   }
   if((sensors & MOTION_SENSOR) > 0){
-    Serial.println("    MOTION")
+    Serial.println("    MOTION");
   }
 
   // Run the main code once, measure runtime
