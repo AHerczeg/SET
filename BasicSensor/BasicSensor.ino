@@ -111,6 +111,8 @@ uint8_t brightness = 0;
 
 bool debugFlag = false;
 
+uint8_t sensors = 0x00000000;
+
 Thread* debugThread;
 Thread* ledThread;
 Thread* advertiseThread;
@@ -281,7 +283,14 @@ void initialiseMPU9150()
 void loop(void)
 {
     while(!debugFlag){
-      code();
+      //code();
+      Serial.println("Start");
+      Si70xx si7020;
+      Serial.println(mpu9150.begin(mpu9150._addr_motion));
+      Serial.println(si7020.begin());
+      Serial.println(Wire.begin());
+      Serial.println("End");
+      delay(5000);
     }
 }
 
