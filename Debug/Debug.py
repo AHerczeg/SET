@@ -3,16 +3,9 @@ import glob
 import serial
 import time
 
-ser = serial.Serial("COM3")
-ser.close()
-def serial_ports():
-    """ Lists serial port names
 
-        :raises EnvironmentError:
-            On unsupported or unknown platforms
-        :returns:
-            A list of the serial ports available on the system
-    """
+def serial_ports():
+    print("Searching for ports")
     if sys.platform.startswith('win'):
         ports = ['COM%s' % (i + 1) for i in range(256)]
     elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
@@ -26,14 +19,12 @@ def serial_ports():
     result = []
     for port in ports:
         try:
-            out = ''
             ser = serial.Serial(port)
             ser.baudrate = 9600
             text = "scanning"
             ser.write(text.encode())
             time.sleep(1)
-            while ser.inWaiting() > 0:
-                out = ser.readline()
+            out = ser.readline()
             ser.close()
             if(out.decode()):
                 result.append(port)
@@ -48,6 +39,7 @@ def serial_ports():
 portList = serial_ports()
 print(portList)
 for port in portList:
+    print(port)
     out = ''
     ser = serial.Serial(port)
     ser.baudrate = 9600
