@@ -4,6 +4,7 @@
 #define GREEN {0, 255, 0}
 #define YELLOW {255, 255, 0}
 #define RED {255, 0, 0}
+#define BLUE {0, 0, 255}
 
 InternetButton b = InternetButton();
 
@@ -19,11 +20,14 @@ typedef struct {
 
 COLOUR ledColour = {0, 0, 0};
 
-int lightMode = 1;
+int lightMode;
+int brightness;
+int lightSpeed;
 
-int brightness = 0;
-
-int lightSpeed = 0;
+// -- EXAMPLE code for demo --
+COLOUR allColours[] = {RED, GREEN, BLUE, YELLOW};
+int currentColour = 0;
+// ---------------------------
 
 Thread* buttonThread;
 Thread* blinkingThread;
@@ -31,20 +35,46 @@ Thread* accelThread;
 
 os_thread_return_t buttonListener(){
   for(;;){
-    bool b1 = false;
-    bool b2 = false;
-    bool b3 = false;
-    bool b4 = false;
-    while(!b.allButtonsOff()){
-      if(b.buttonOn(1))
-        b1 = true;
-      if(b.buttonOn(2))
-        b2 = true;
-      if(b.buttonOn(3))
-        b3 = true;
-      if(b.buttonOn(4))
-        b4 = true;
-      delay(100);
+    int pressed = buttonPressed();
+    if(pressed > 0){
+      // -- EXAMPLE code for demo --
+      switch(pressed){
+        case 1: if(!lightMode){
+                  currentColour -= 1;
+                  if(currentColour < 0)
+                    currentColour = 3;
+                  ledColour = allColours[currentColour];
+                } else {
+                  brightness -= 25;
+                  if(brightness < 0)
+                    brightness = 0;
+                  b.setBrightness(brightness);
+                }
+                break;
+        case 2: if(lightMode == 0)
+                  lightMode = 1;
+                else
+                  lightMode = 0;
+                break;
+        case 4: if(!lightMode){
+                  currentColour += 1;
+                  if(currentColour > 3)
+                    currentColour = 0;
+                  ledColour = allColours[currentColour];
+                } else {
+                  brightness += 25;
+                  if(brightness > 255)
+                    brightness = 255;
+                  b.setBrightness(brightness);
+                }
+                break;
+        case 8: if(lightMode == 0)
+                  lightMode = 1;
+                else
+                  lightMode = 0;
+                break;
+      };
+      // ---------------------------
     }
     delay(100);
   }
@@ -53,21 +83,25 @@ os_thread_return_t buttonListener(){
 os_thread_return_t light(){
   for(;;){
     switch(lightMode){
-      case 0: blinking();
+      case 0: blinking(lightMode);
               break;
-      case 1: circle();
+      case 1: circle(lightMode);
               break;
-      default: delay(100);
+      default:  b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
+                delay(100);
     }
-
-
   }
 }
 
 void setup() {
     Serial.begin(9600);
     b.begin();
-    ledColour = GREEN;
+
+    lightMode = -1;
+    brightness = 0;
+    lightSpeed = 5;
+    ledColour = RED;
+
     buttonThread = new Thread("buttonListener", buttonListener);
     blinkingThread = new Thread("light", light);
     b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
@@ -79,17 +113,30 @@ void loop() {
 }
 
 void code(){
-  delay(2000);
+  colourFade(0, 0, 255);
+  Serial.println("----------------------------");
+  colourFade(255, 0, 0);
+  delay(5000);
 }
 
-void buttonPressed(int button){
-  if(button >= 0 && button <= 4){
-
+int buttonPressed(){
+  uint8_t button = 0x00;
+  while(!b.allButtonsOff()){
+    if(b.buttonOn(1))
+      button = button | 0x01;
+    if(b.buttonOn(2))
+      button = button | 0x02;
+    if(b.buttonOn(3))
+      button = button | 0x04;
+    if(b.buttonOn(4))
+      button = button | 0x08;
+    delay(100);
   }
+  return (int) button;
 }
 
-void blinking(){
-  while(brightness < 255){
+void blinking(int myMode){
+  while(brightness < 255 && lightMode == myMode){
     brightness += 5;
     if(brightness > 255)
       brightness = 255;
@@ -97,7 +144,8 @@ void blinking(){
     b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
     delay (10 + lightSpeed * 10);
   }
-  while(brightness > 0){
+  delay(500 + lightSpeed * 10);
+  while(brightness > 0 && lightMode == myMode){
     brightness -= 5;
     if(brightness < 0)
       brightness = 0;
@@ -105,12 +153,12 @@ void blinking(){
     b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
     delay (10 + lightSpeed * 10);
   }
-  delay(500);
+  delay(500 + lightSpeed * 10);
 }
 
-void circle(){
+void circle(int myMode){
   int i;
-  for(i = 1; i < 12; i++){
+  for(i = 1; i < 12 && lightMode == myMode; i++){
     b.allLedsOff();
     b.ledOn(i, ledColour.r * 0.1, ledColour.g * 0.1, ledColour.b * 0.1);
     b.ledOn(((i+1)/12 + (i+1)%12), ledColour.r * 0.2, ledColour.g * 0.2, ledColour.b * 0.2);
@@ -122,6 +170,68 @@ void circle(){
     b.ledOn(((i+7)/12 + (i+7)%12), ledColour.r * 0.8, ledColour.g * 0.8, ledColour.b * 0.8);
     b.ledOn(((i+8)/12 + (i+8)%12), ledColour.r * 0.9, ledColour.g * 0.9, ledColour.b * 0.9);
     b.ledOn(((i+9)/12 + (i+9)%12), ledColour.r, ledColour.g, ledColour.b);
-    delay(100 + lightSpeed * 10);
+    delay(100 + lightSpeed * 5);
+  }
+}
+
+void setColour(int red, int green, int blue){
+  if (red <= 255 && red >= 0 && green <= 255 && green >= 0 && blue <= 255 && blue >= 0)
+    ledColour = {red, green, blue};
+}
+
+void setMode(int mode){
+  if(mode >= 0)
+    lightMode = mode;
+}
+
+void setSpeed(int speed){
+  if(speed >= 0)
+    lightSpeed = speed;
+}
+
+void setBrightness(int newBrightness){
+  if(brightness >= 0 && brightness <= 255)
+    brightness = newBrightness;
+}
+
+void colourFade(int red, int green, int blue){
+  if (red <= 255 && red >= 0 && green <= 255 && green >= 0 && blue <= 255 && blue >= 0)
+  {
+    while(ledColour.r != red || ledColour.g != green || ledColour.b != blue){
+      if(ledColour.r < red){
+        if(ledColour.r <= 250)
+          ledColour.r += 5;
+        else
+          ledColour.r = 255;
+      } else if(ledColour.r > red){
+        if(ledColour.r >= 5)
+          ledColour.r -= 5;
+        else
+          ledColour.r = 0;
+      }
+      if(ledColour.g < green){
+        if(ledColour.g <= 250)
+          ledColour.g += 5;
+        else
+          ledColour.g = 255;
+      } else if(ledColour.g > green){
+        if(ledColour.g >= 5)
+          ledColour.g -= 5;
+        else
+          ledColour.g = 0;
+      }
+      if(ledColour.b < blue){
+        if(ledColour.b <= 250)
+          ledColour.b += 5;
+        else
+          ledColour.b = 255;
+      } else if(ledColour.b > blue){
+        if(ledColour.b >= 5)
+          ledColour.b -= 5;
+        else
+          ledColour.b = 0;
+      }
+      delay(300);
+    }
   }
 }
