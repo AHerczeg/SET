@@ -94,7 +94,7 @@ bool sensorAttached = false;
 
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
 
-const char* path = "/sensor";
+const char* path = "/sensor_history";
 
 String deviceID;
 
@@ -290,8 +290,7 @@ void initialiseMPU9150()
 void loop(void)
 {
     while(!debugFlag){
-      //code();
-      delay(5000);
+      code();
     }
 }
 
@@ -321,12 +320,10 @@ void code(){
 
   Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
-  path = "/sensor_history";
-
   String tempStr = "";
   String timestamp = timestampFormat();
 
-  String sensorData = tempStr+"{\"temperature\":" + String(Si7020Temperature) + ", \"humidity\":" + String(Si7020Humidity) + ",\"light\":" + String(Si1132Visible) + "}";
+  String sensorData = tempStr+"{temperature: " + String(Si7020Temperature) + ", humidity: " + String(Si7020Humidity) + ", light: " + String(Si1132Visible) + "}";
 
   String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
 
@@ -544,6 +541,8 @@ void debug(){
     Serial.println("  SERVER: GO");
   else
     Serial.println("  SERVER: NOGO");
+
+  path = pathHolder;
 
   // List all recognised sensors
   Serial.println("  SENSORS");
