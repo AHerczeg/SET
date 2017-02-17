@@ -90,8 +90,9 @@ void addTrigger(){
     buffer = "";
     delay(100);
   }
-  String sendingString = tempStr + "{trigger_string: \"" + trigger +  "\" , owner: \"" + owner + "\"}";
+  String sendingString = tempStr + "{\"trigger_string\": \"" + trigger + "\" , \"active\": true , \"owner\": \"" + owner +"\"}"; 
   String responseString;
+  Serial.println(sendingString);
   client.post(path, (const char*) sendingString, &responseString);
   Serial.println(responseString);
 }

@@ -5,12 +5,17 @@
 #define YELLOW {255, 255, 0}
 #define RED {255, 0, 0}
 #define BLUE {0, 0, 255}
+#define WHITE {255, 255, 255}
+#define LIGHTS_ON "/lights/on"
+#define LIGHTS_OFF "/lights/off"
+#define KETTLE_ON "/kettle/on"
+#define KETTLE_OFF "/kettle/off"
 
 InternetButton b = InternetButton();
 
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
 
-const char* path = "/button";
+const char* path = "/lights/on";
 
 typedef struct {
     uint8_t r;
@@ -25,55 +30,108 @@ int brightness;
 int lightSpeed;
 
 // -- EXAMPLE code for demo --
-COLOUR allColours[] = {RED, GREEN, BLUE, YELLOW};
+COLOUR allColours[] = {RED, GREEN, BLUE, YELLOW, WHITE};
 int currentColour = 0;
+bool kettleMode = false;
+bool bulbOn = true;
 // ---------------------------
 
 Thread* buttonThread;
 Thread* blinkingThread;
-Thread* accelThread;
+Thread* serialThread;
+
+os_thread_return_t serialListener(){
+  String buffer = "";
+  String tempStr = "";
+  for(;;){
+    if(Serial.available() > 0){
+      Serial.flush();
+      while (Serial.available() > 0) {
+        if(Serial.peek() != 10){
+          buffer = tempStr + buffer + (char)(Serial.read());
+        } else {Serial.read();}
+      }
+      Serial.println("Incoming serial: " + buffer);
+      if(buffer.compareTo("kettle") == 0){
+        kettleMode = true;
+        ledColour = BLUE;
+        b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
+      } else if (buffer.compareTo("light") == 0){
+        kettleMode = false;
+        ledColour = WHITE;
+        b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
+      }
+
+      buffer = "";
+    }
+  }
+}
 
 os_thread_return_t buttonListener(){
   for(;;){
     int pressed = buttonPressed();
     if(pressed > 0){
       // -- EXAMPLE code for demo --
-      switch(pressed){
-        case 1: if(!lightMode){
-                  currentColour -= 1;
-                  if(currentColour < 0)
-                    currentColour = 3;
-                  ledColour = allColours[currentColour];
-                } else {
-                  brightness -= 25;
-                  if(brightness < 0)
-                    brightness = 0;
-                  b.setBrightness(brightness);
-                }
-                break;
-        case 2: if(lightMode == 0)
-                  lightMode = 1;
-                else
-                  lightMode = 0;
-                break;
-        case 4: if(!lightMode){
-                  currentColour += 1;
-                  if(currentColour > 3)
-                    currentColour = 0;
-                  ledColour = allColours[currentColour];
-                } else {
-                  brightness += 25;
-                  if(brightness > 255)
-                    brightness = 255;
-                  b.setBrightness(brightness);
-                }
-                break;
-        case 8: if(lightMode == 0)
-                  lightMode = 1;
-                else
-                  lightMode = 0;
-                break;
-      };
+      if(kettleMode){
+
+        switch(pressed){
+          case 15:  path = KETTLE_ON;
+                    client.get(path);
+                    colourFade(255, 0, 0);
+                    Serial.println("Switching kettle on");
+                    break;
+        }
+      } else {
+        switch(pressed){
+          case 1: if(!lightMode){
+                    currentColour -= 1;
+                    if(currentColour < 0)
+                      currentColour = 4;
+                    ledColour = allColours[currentColour];
+                  } else {
+                    brightness -= 25;
+                    if(brightness < 0)
+                      brightness = 0;
+                    b.setBrightness(brightness);
+                  }
+                  break;
+          case 2: if(lightMode == 0)
+                    lightMode = 1;
+                  else
+                    lightMode = 0;
+                  break;
+          case 4: if(!lightMode){
+                    currentColour += 1;
+                    if(currentColour > 4)
+                      currentColour = 0;
+                    ledColour = allColours[currentColour];
+                  } else {
+                    brightness += 25;
+                    if(brightness > 255)
+                      brightness = 255;
+                    b.setBrightness(brightness);
+                  }
+                  break;
+          case 8: if(lightMode == 0)
+                    lightMode = 1;
+                  else
+                    lightMode = 0;
+                  break;
+          case 15:  if(bulbOn){
+                      path = LIGHTS_OFF;
+                      bulbOn = false;
+                      client.get(path);
+                      Serial.println("Switching lights off");
+                    } else {
+                      path = LIGHTS_ON;
+                      bulbOn = true;
+                      client.get(path);
+                      Serial.println("Switching lights on");
+                    }
+                    break;
+        }
+
+      }
       // ---------------------------
     }
     delay(100);
@@ -100,10 +158,11 @@ void setup() {
     lightMode = -1;
     brightness = 0;
     lightSpeed = 5;
-    ledColour = RED;
+    ledColour = WHITE;
 
     buttonThread = new Thread("buttonListener", buttonListener);
     blinkingThread = new Thread("light", light);
+    serialThread = new Thread("serial", serialListener);
     b.allLedsOn(ledColour.r, ledColour.g, ledColour.b);
 }
 
@@ -113,9 +172,6 @@ void loop() {
 }
 
 void code(){
-  colourFade(0, 0, 255);
-  Serial.println("----------------------------");
-  colourFade(255, 0, 0);
   delay(5000);
 }
 

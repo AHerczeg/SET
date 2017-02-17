@@ -19,6 +19,7 @@ def serial_ports():
     result = []
     for port in ports:
         try:
+            print(port)
             ser = serial.Serial(port)
             ser.baudrate = 9600
             text = "scanning"

@@ -18,6 +18,8 @@
 #define LIGHT_SENSOR 0x20
 #define ACCEL_SENSOR 0x10
 #define MOTION_SENSOR 0x08
+#define SOUND_SENSOR 0x04
+#define INTERNET_BUTTON 0x02
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -244,8 +246,8 @@ void setup()
     String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
     client.post(path, (const char*) sensorString);
 
-    //if(sensorValue == HIGH)
-      //sensorAttached = true;
+    readWeatherSi7020();
+    readSi1132Sensor();
 }
 
 void initialiseMPU9150()
@@ -254,6 +256,7 @@ void initialiseMPU9150()
 
   if (ACCELOK)
   {
+      sensors = sensors | ACCEL_SENSOR;
       // Clear the 'sleep' bit to start the sensor.
       mpu9150.writeSensor(mpu9150._addr_motion, MPU9150_PWR_MGMT_1, 0);
 
@@ -290,7 +293,10 @@ void initialiseMPU9150()
 void loop(void)
 {
     while(!debugFlag){
-      code();
+      //code();
+      Serial.println("------------------------------");
+      Serial.println(readSoundLevel());
+      delay(500);
     }
 }
 
@@ -366,6 +372,8 @@ int readWeatherSi7020()
 
     if (Si7020OK)
     {
+        sensors = sensors | TEMP_SENSOR;
+        sensors = sensors | HUM_SENSOR;
         Si7020Temperature = si7020.readTemperature();
         Si7020Humidity = si7020.readHumidity();
     }
@@ -378,6 +386,8 @@ int readWeatherSi7020()
 ///reads UV, visible and InfraRed light level
 void readSi1132Sensor()
 {
+    if((sensors & TEMP_SENSOR) > 0 && (sensors & HUM_SENSOR) > 0)
+      sensors = sensors | LIGHT_SENSOR;
     si1132.begin(); //// initialises Si1132
     Si1132UVIndex = si1132.readUV() *0.01;
     Si1132Visible = si1132.readVisible();
@@ -411,6 +421,8 @@ float readSoundLevel()
     //SOUNDV = signalMax - signalMin;  // max - min = peak-peak amplitude
     SOUNDV = mapFloat((signalMax - signalMin), 0, 4095, 0, 3.3);
 
+    if( SOUNDV > 0.02)
+      sensors = sensors | SOUND_SENSOR;
     //return 1;
     return SOUNDV;
 }
@@ -560,6 +572,12 @@ void debug(){
   }
   if((sensors & MOTION_SENSOR) > 0){
     Serial.println("    MOTION");
+  }
+  if((sensors & SOUND_SENSOR) > 0){
+    Serial.println("    SOUND");
+  }
+  if((sensors & INTERNET_BUTTON) > 0){
+    Serial.println("    INTERNET BUTTON");
   }
 
   // Run the main code once, measure runtime
