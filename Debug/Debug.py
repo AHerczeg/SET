@@ -19,16 +19,17 @@ def serial_ports():
     result = []
     for port in ports:
         try:
-            print(port)
-            ser = serial.Serial(port)
-            ser.baudrate = 9600
-            text = "scanning"
-            ser.write(text.encode())
-            time.sleep(1)
-            out = ser.readline()
-            ser.close()
-            if(out.decode()):
-                result.append(port)
+            if port != "COM5":
+                print(port)
+                ser = serial.Serial(port)
+                ser.baudrate = 9600
+                text = "scanning"
+                ser.write(text.encode())
+                time.sleep(1)
+                out = ser.readline()
+                ser.close()
+                if(out.decode()):
+                    result.append(port)
         except (OSError, serial.SerialException):
             pass
 

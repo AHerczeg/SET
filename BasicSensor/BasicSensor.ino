@@ -293,10 +293,8 @@ void initialiseMPU9150()
 void loop(void)
 {
     while(!debugFlag){
-      //code();
-      Serial.println("------------------------------");
-      Serial.println(readSoundLevel());
-      delay(500);
+      code();
+      delay(1000);
     }
 }
 
