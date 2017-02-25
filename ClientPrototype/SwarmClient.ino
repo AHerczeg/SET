@@ -1,68 +1,57 @@
-#include "rest_client.h"
+// UDP Port used for two way communication
+unsigned int localPort = 8888;
+
+// An UDP instance to let us send and receive packets over UDP
+UDP Udp;
+
+int leaderAddress[4] = {-1, -1, -1, -1};
+
+char c = 'A';
+
+void swarmHandler(const char *event, const char *data)
+{
+  String buffer = data;
+  ipSplit(data, 0);
+}
+
+void setup() {
+  // start the UDP
+  Udp.begin(localPort);
+
+  Serial.begin(9600);
+
+  Particle.subscribe("SwarmLeader", swarmHandler);
+}
+
+void loop() {
+  if(c < 90)
+    c++;
+  else
+    c = 'A';
 
 
-String owner = "";
-
-Thread* debugThread;
-
-os_thread_return_t serialListener(){
-  String buffer = "";
-  String tempStr = "";
-  for(;;){
-    if(Serial.available() > 0){
-      Serial.flush();
-      while (Serial.available() > 0) {
-        if(Serial.peek() != 10){
-          buffer = tempStr + buffer + (char)(Serial.read());
-        } else {Serial.read();}
-      }
-      Serial.println("Incoming serial: " + buffer);
-      if(buffer.compareTo("add") == 0){
-        Serial.println("---------");
-      }
-      buffer = "";
-      delay(100);
-    }
+  if(leaderAddress[0] > -1 && leaderAddress[1] > -1 && leaderAddress[2] > -1 && leaderAddress[3] > -1){
+    IPAddress leaderIP(leaderAddress[0], leaderAddress[1], leaderAddress[2], leaderAddress[3]);
+    Udp.beginPacket(leaderIP, 8888);
+    Udp.write(c);
+    Udp.endPacket();
+    Serial.println("Packet out");
   }
+
+  delay(500);
+
+
+  //Udp.beginPacket(ipAddress, port);
+  //Udp.write(c);
+  //Udp.endPacket();
 }
 
-TCPClient client;
-byte server[] = {192, 168, 0, 103};
-
-void setup()
-{
-    // opens serial over USB
-    Serial.begin(9600);
-
-    debugThread = new Thread("debug", serialListener);
-
-    client.connect(server, 23);
-}
-
-
-void loop(void)
-{
-      code();
-      delay(1000);
-}
-
-void code(){
-  Serial.println("------------");
-  if (client.connected())
-  {
-    Serial.println("sending");
-    client.write(10);
+void ipSplit(String data, int i){
+  int index = data.indexOf('.') + 1;
+  if(index == 0){
+    leaderAddress[i] = atoi(data);
   } else {
-    client.connect(server, 23);
-  }
-  String tempStr = "";
-  String buffer = "";
-  while(client.available())
-  {
-    char receivedByte = client.read();
-    if(receivedByte != 10)
-      buffer = tempStr + buffer + receivedByte;
-    else
-      Serial.println(buffer);
+    leaderAddress[i] = atoi(data.substring(0, index));
+    ipSplit(data.substring(index, data.length()), (i+1));
   }
 }

@@ -1,73 +1,53 @@
-#include "rest_client.h"
+// UDP Port used for two way communication
+unsigned int localPort = 8888;
 
+// An UDP instance to let us send and receive packets over UDP
+UDP Udp;
 
-RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
+Thread* swarmThread;
 
-const char* path = "/trigger";
-
-String owner = "";
-
-Thread* debugThread;
-
-os_thread_return_t serialListener(){
-  String buffer = "";
-  String tempStr = "";
+// Thread for blinking the LED
+os_thread_return_t swarm(){
   for(;;){
-    if(Serial.available() > 0){
-      Serial.flush();
-      while (Serial.available() > 0) {
-        if(Serial.peek() != 10){
-          buffer = tempStr + buffer + (char)(Serial.read());
-        } else {Serial.read();}
-      }
-      Serial.println("Incoming serial: " + buffer);
-      if(buffer.compareTo("add") == 0){
-        Serial.println("---------");
-      }
-      buffer = "";
-      delay(100);
-    }
+    String ipString = WiFi.localIP();
+    Particle.publish("SwarmLeader", ipString);
+    String serialString = "Sending IP address <" + ipString + ">";
+    Serial.println(serialString);
+    delay(5000);
   }
 }
 
-TCPServer server = TCPServer(23);
 
-TCPClient tcpClient;
+void setup() {
+  // start the UDP
+  Udp.begin(localPort);
 
-void setup()
-{
-    // opens serial over USB
-    Serial.begin(9600);
+  Serial.begin(9600);
 
-    debugThread = new Thread("debug", serialListener);
-
-    server.begin();
-
-    Serial.println(WiFi.localIP());
-    Serial.println(WiFi.subnetMask());
-    Serial.println(WiFi.gatewayIP());
-    Serial.println(WiFi.SSID());
+  swarmThread = new Thread("swarm", swarm);
 
 }
 
+void loop() {
+  // Check if data has been received
 
-void loop(void)
-{
-      code();
-      delay(500);
-}
+  if (Udp.parsePacket() > 0) {
 
-void code(){
-  Serial.println("------------");
-  Serial.println(WiFi.localIP());
-  if (tcpClient.connected()) {
-    // echo all available bytes back to the client
-    while (tcpClient.available()) {
-      Serial.println(tcpClient.read());
-      server.println("Welcome to the swarm");
-    }
-  } else {
-    // if no client is yet connected, check for a new connection
-    tcpClient = server.available();
+    // Read first char of data received
+    char c = Udp.read();
+
+    Serial.println(c);
+
+    // Ignore other chars
+    while(Udp.available())
+      Udp.read();
+
+    // Store sender ip and port
+    IPAddress ipAddress = Udp.remoteIP();
+    int port = Udp.remotePort();
+
+    Udp.beginPacket(ipAddress, port);
+    Udp.write('B');
+    Udp.endPacket();
   }
 }
