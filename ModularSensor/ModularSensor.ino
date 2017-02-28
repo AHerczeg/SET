@@ -18,6 +18,8 @@
 #define LIGHT_SENSOR 0x20
 #define ACCEL_SENSOR 0x10
 #define MOTION_SENSOR 0x08
+#define SOUND_SENSOR 0x04
+#define INTERNET_BUTTON 0x02
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -30,8 +32,6 @@ double THRESHOLD = 1.0; //Threshold for temperature and humidity changes
 int THRES_L = 5; // Threshold for light changes
 int THRES_S = 23; // Threshold for sound changes
 
-// Variables for the I2C scan
-byte I2CERR, I2CADR;
 
 //// ***************************************************************************
 //// ***************************************************************************
@@ -61,11 +61,6 @@ double BMP180Pressure = 0;    //// hPa
 double BMP180Temperature = 0; //// Celsius
 double BMP180Altitude = 0;    //// Meters
 
-double oldTmp = 0;
-double oldHmd = 0;
-double oldVisible = 0;
-double oldSound = 0;
-
 bool Si7020OK = false;
 double Si7020Temperature = 0; //// Celsius
 double Si7020Humidity = 0;    //// %Relative Humidity
@@ -89,12 +84,11 @@ int inputPin = D6; // PIR motion sensor. D6 goes HIGH when motion is detected an
 
 int sensorState = LOW;        // Start by assuming no motion detected
 int sensorValue = 0;
-bool sensorAttached = false;
 
 
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
 
-const char* path = "/sensor";
+const char* path = "/sensor_history";
 
 String deviceID;
 
@@ -118,11 +112,33 @@ bool debugFlag = false;
 
 uint8_t sensors = 0x00;
 
-Thread* debugThread;
-Thread* ledThread;
-Thread* advertiseThread;
+// UDP Port used for two way communication
+unsigned int localPort = 8888;
 
-os_thread_return_t debugListener(){
+// An UDP instance to let us send and receive packets over UDP
+UDP Udp;
+
+// Global variables used to set leader
+bool isLeader = false;
+int promoteStart = -1;
+
+Timer timer(10000, promoteSelf, true);
+Timer leaderTimer(5000, setLeader, true);
+
+byte leaderAddress[4] = {-1, -1, -1, -1};
+byte multicastAddress[4] = {-1, -1, -1, -1};
+IPAddress leaderIP = -1;
+IPAddress multicastIP = -1;
+IPAddress ownIP = -1;
+
+
+
+Thread* serialThread;
+Thread* ledThread;
+Thread* swarmThread;
+Thread* competitionThread;
+
+os_thread_return_t serialListener(){
   String buffer = "";
   String tempStr = "";
   for(;;){
@@ -153,12 +169,29 @@ os_thread_return_t ledBlinking(){
   }
 }
 
-os_thread_return_t advertise(){
+os_thread_return_t swarm(){
   for(;;){
-    Particle.publish("detectChan", deviceID, PRIVATE);
-    delay(36000);
+    if(isLeader){
+      String ipString = WiFi.localIP();
+      ipString = "" + ipString + ",244.0.0.0";
+      Particle.publish("SwarmLeader", ipString);
+      delay(5000);
+    }
   }
 }
+
+os_thread_return_t competition(){
+  for(;;){
+    if(promoteStart >= 0){
+      char tempArray[100];
+      itoa(promoteStart, tempArray, 10);
+      String timeString = tempArray;
+      Particle.publish("SwarmCompetition", timeString);
+    }
+    delay(300);
+  }
+}
+
 
 //// ***************************************************************************
 
@@ -189,14 +222,7 @@ void setup()
     // opens serial over USB
     Serial.begin(9600);
 
-    // Set I2C speed
-    // 400Khz seems to work best with the Photon with the packaged I2C sensors
-    Wire.setSpeed(CLOCK_SPEED_400KHZ);
-
-    Wire.begin();  // Start up I2C, required for LSM303 communication
-
-    // enables interrupts
-    interrupts();
+    Udp.begin(localPort);
 
     // initialises the IO pins
     setPinsMode();
@@ -207,9 +233,15 @@ void setup()
     // Initialize motion sensor input pin
     pinMode(inputPin, INPUT);
 
-    System.enableReset();
-
     deviceID = System.deviceID();
+
+    Particle.subscribe("SwarmLeader", swarmHandler);
+
+    Particle.subscribe("SwarmCompetition", competitionHandler);
+
+    timer.start();
+
+    ownIP = WiFi.localIP();
 
     EEPROM.get(0, rawRole);
 
@@ -236,16 +268,16 @@ void setup()
 
     ledThread = new Thread("ledBlinking", ledBlinking);
 
-    debugThread = new Thread("debug", debugListener);
+    serialThread = new Thread("debug", serialListener);
 
-    advertiseThread = new Thread("advertise", advertise);
+    competitionThread = new Thread("competition", competition);
 
     String tempStr = "";
     String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
     client.post(path, (const char*) sensorString);
 
-    //if(sensorValue == HIGH)
-      //sensorAttached = true;
+    readWeatherSi7020();
+    readSi1132Sensor();
 }
 
 void initialiseMPU9150()
@@ -254,6 +286,7 @@ void initialiseMPU9150()
 
   if (ACCELOK)
   {
+      sensors = sensors | ACCEL_SENSOR;
       // Clear the 'sleep' bit to start the sensor.
       mpu9150.writeSensor(mpu9150._addr_motion, MPU9150_PWR_MGMT_1, 0);
 
@@ -290,19 +323,13 @@ void initialiseMPU9150()
 void loop(void)
 {
     while(!debugFlag){
-      //code();
-      delay(5000);
+      code();
     }
 }
 
 
 // The code is outside of the loop so we can control when it's being ran
 void code(){
-  //// prints device version and address
-
-  //Serial.print("Device version: "); Serial.println(System.version());
-  //Serial.print("Device ID: "); Serial.println(System.deviceID());
-  //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
 
   //// ***********************************************************************
 
@@ -321,12 +348,10 @@ void code(){
 
   Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
-  path = "/sensor_history";
-
   String tempStr = "";
   String timestamp = timestampFormat();
 
-  String sensorData = tempStr+"{\"temperature\":" + String(Si7020Temperature) + ", \"humidity\":" + String(Si7020Humidity) + ",\"light\":" + String(Si1132Visible) + "}";
+  String sensorData = tempStr+"{\\\"temperature\\\": " + String(Si7020Temperature) + ", \\\"humidity\\\": " + String(Si7020Humidity) + ", \\\"light\\\": " + String(Si1132Visible) + "}";
 
   String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
 
@@ -369,6 +394,8 @@ int readWeatherSi7020()
 
     if (Si7020OK)
     {
+        sensors = sensors | TEMP_SENSOR;
+        sensors = sensors | HUM_SENSOR;
         Si7020Temperature = si7020.readTemperature();
         Si7020Humidity = si7020.readHumidity();
     }
@@ -381,6 +408,8 @@ int readWeatherSi7020()
 ///reads UV, visible and InfraRed light level
 void readSi1132Sensor()
 {
+    if((sensors & TEMP_SENSOR) > 0 && (sensors & HUM_SENSOR) > 0)
+      sensors = sensors | LIGHT_SENSOR;
     si1132.begin(); //// initialises Si1132
     Si1132UVIndex = si1132.readUV() *0.01;
     Si1132Visible = si1132.readVisible();
@@ -414,6 +443,8 @@ float readSoundLevel()
     //SOUNDV = signalMax - signalMin;  // max - min = peak-peak amplitude
     SOUNDV = mapFloat((signalMax - signalMin), 0, 4095, 0, 3.3);
 
+    if( SOUNDV > 0.02)
+      sensors = sensors | SOUND_SENSOR;
     //return 1;
     return SOUNDV;
 }
@@ -464,6 +495,81 @@ String timestampFormat(){
     timestamp += tempStr + String(Time.second());
 
   return timestamp;
+}
+
+void sendDataToServer(){
+
+}
+
+void swarmHandler(const char *event, const char *data)
+{
+  timer.start();
+  if(leaderTimer.isActive()){
+    leaderTimer.reset();
+    leaderTimer.stop();
+    promoteStart = -1;
+  }
+  String buffer = data;
+  Serial.println(buffer);
+  int divider = buffer.indexOf(',');
+  ipSplit(buffer.substring(0, divider), 0);
+  multicastSplit(buffer.substring(divider + 1), 0);
+  if(leaderAddress[0] > -1 && leaderAddress[1] > -1 && leaderAddress[2] > -1 && leaderAddress[3] > -1)
+    leaderIP = IPAddress(leaderAddress[0], leaderAddress[1], leaderAddress[2], leaderAddress[3]);
+  if(isLeader && leaderIP == ownIP){
+    Serial.println("Other leader detected");
+    RGB.color(ledColour.r, ledColour.g, ledColour.b);
+    isLeader = false;
+    timer.reset();
+    timer.stop();
+    promoteSelf();
+  }
+}
+
+void competitionHandler(const char *event, const char *data)
+{
+  String buffer = data;
+  if(promoteStart >= 0 && atoi(data) < promoteStart && leaderTimer.isActive()){
+    leaderTimer.reset();
+    leaderTimer.stop();
+    promoteStart = -1;
+    timer.start();
+    timer.reset();
+  }
+}
+
+void promoteSelf(){
+  promoteStart = Time.now();
+  Serial.println("Promoting self");
+  leaderTimer.start();
+}
+
+void setLeader(){
+  isLeader = true;
+  promoteStart = -1;
+  RGB.color(255,128,0);
+  Serial.println("Set as leader");
+  swarmThread = new Thread("swarm", swarm);
+}
+
+void ipSplit(String data, int i){
+  int index = data.indexOf('.') + 1;
+  if(index == 0){
+    leaderAddress[i] = atoi(data);
+  } else {
+    leaderAddress[i] = atoi(data.substring(0, index));
+    ipSplit(data.substring(index, data.length()), (i+1));
+  }
+}
+
+void multicastSplit(String data, int i){
+  int index = data.indexOf('.') + 1;
+  if(index == 0){
+    multicastAddress[i] = atoi(data);
+  } else {
+    multicastAddress[i] = atoi(data.substring(0, index));
+    ipSplit(data.substring(index, data.length()), (i+1));
+  }
 }
 
 // Start debugging
@@ -545,6 +651,8 @@ void debug(){
   else
     Serial.println("  SERVER: NOGO");
 
+  path = pathHolder;
+
   // List all recognised sensors
   Serial.println("  SENSORS");
   if((sensors & TEMP_SENSOR) > 0){
@@ -561,6 +669,12 @@ void debug(){
   }
   if((sensors & MOTION_SENSOR) > 0){
     Serial.println("    MOTION");
+  }
+  if((sensors & SOUND_SENSOR) > 0){
+    Serial.println("    SOUND");
+  }
+  if((sensors & INTERNET_BUTTON) > 0){
+    Serial.println("    INTERNET BUTTON");
   }
 
   // Run the main code once, measure runtime

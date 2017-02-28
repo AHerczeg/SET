@@ -32,8 +32,6 @@ double THRESHOLD = 1.0; //Threshold for temperature and humidity changes
 int THRES_L = 5; // Threshold for light changes
 int THRES_S = 23; // Threshold for sound changes
 
-// Variables for the I2C scan
-byte I2CERR, I2CADR;
 
 //// ***************************************************************************
 //// ***************************************************************************

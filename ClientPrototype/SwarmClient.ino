@@ -73,11 +73,7 @@ void swarmHandler(const char *event, const char *data)
 void competitionHandler(const char *event, const char *data)
 {
   String buffer = data;
-  if(promoteStart >= 0 && atoi(data) == promoteStart && leaderTimer.isActive()){
-    //delay(100 + random(200));
-    //promoteStart = Time.now();
-    //leaderTimer.reset();
-  } else if(promoteStart >= 0 && atoi(data) < promoteStart && leaderTimer.isActive()){
+  if(promoteStart >= 0 && atoi(data) < promoteStart && leaderTimer.isActive()){
     leaderTimer.reset();
     leaderTimer.stop();
     promoteStart = -1;
