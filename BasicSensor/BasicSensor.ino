@@ -63,11 +63,6 @@ double BMP180Pressure = 0;    //// hPa
 double BMP180Temperature = 0; //// Celsius
 double BMP180Altitude = 0;    //// Meters
 
-double oldTmp = 0;
-double oldHmd = 0;
-double oldVisible = 0;
-double oldSound = 0;
-
 bool Si7020OK = false;
 double Si7020Temperature = 0; //// Celsius
 double Si7020Humidity = 0;    //// %Relative Humidity
@@ -91,7 +86,6 @@ int inputPin = D6; // PIR motion sensor. D6 goes HIGH when motion is detected an
 
 int sensorState = LOW;        // Start by assuming no motion detected
 int sensorValue = 0;
-bool sensorAttached = false;
 
 
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
@@ -120,11 +114,10 @@ bool debugFlag = false;
 
 uint8_t sensors = 0x00;
 
-Thread* debugThread;
+Thread* serialThread;
 Thread* ledThread;
-Thread* advertiseThread;
 
-os_thread_return_t debugListener(){
+os_thread_return_t serialListener(){
   String buffer = "";
   String tempStr = "";
   for(;;){
@@ -155,12 +148,6 @@ os_thread_return_t ledBlinking(){
   }
 }
 
-os_thread_return_t advertise(){
-  for(;;){
-    Particle.publish("detectChan", deviceID, PRIVATE);
-    delay(36000);
-  }
-}
 
 //// ***************************************************************************
 
@@ -191,13 +178,6 @@ void setup()
     // opens serial over USB
     Serial.begin(9600);
 
-    // Set I2C speed
-    // 400Khz seems to work best with the Photon with the packaged I2C sensors
-    Wire.setSpeed(CLOCK_SPEED_400KHZ);
-
-    Wire.begin();  // Start up I2C, required for LSM303 communication
-
-    // enables interrupts
     interrupts();
 
     // initialises the IO pins
@@ -238,9 +218,7 @@ void setup()
 
     ledThread = new Thread("ledBlinking", ledBlinking);
 
-    debugThread = new Thread("debug", debugListener);
-
-    advertiseThread = new Thread("advertise", advertise);
+    serialThread = new Thread("debug", serialListener);
 
     String tempStr = "";
     String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
@@ -294,18 +272,12 @@ void loop(void)
 {
     while(!debugFlag){
       code();
-      delay(1000);
     }
 }
 
 
 // The code is outside of the loop so we can control when it's being ran
 void code(){
-  //// prints device version and address
-
-  //Serial.print("Device version: "); Serial.println(System.version());
-  //Serial.print("Device ID: "); Serial.println(System.deviceID());
-  //Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
 
   //// ***********************************************************************
 
@@ -327,7 +299,7 @@ void code(){
   String tempStr = "";
   String timestamp = timestampFormat();
 
-  String sensorData = tempStr+"{temperature: " + String(Si7020Temperature) + ", humidity: " + String(Si7020Humidity) + ", light: " + String(Si1132Visible) + "}";
+  String sensorData = tempStr+"{\\\"temperature\\\": " + String(Si7020Temperature) + ", \\\"humidity\\\": " + String(Si7020Humidity) + ", \\\"light\\\": " + String(Si1132Visible) + "}";
 
   String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
 
@@ -471,6 +443,10 @@ String timestampFormat(){
     timestamp += tempStr + String(Time.second());
 
   return timestamp;
+}
+
+void sendDataToServer(){
+
 }
 
 // Start debugging
