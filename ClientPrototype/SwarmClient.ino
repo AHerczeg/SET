@@ -21,6 +21,7 @@ Thread* swarmThread;
 os_thread_return_t swarm(){
   for(;;){
     String ipString = WiFi.localIP();
+    ipString = "" + ipString + ",244.0.0.0";
     Particle.publish("SwarmLeader", ipString);
     String serialString = "Sending IP address <" + ipString + ">";
     //Serial.println(serialString);
@@ -82,6 +83,18 @@ void loop() {
     Udp.write(c);
     Udp.endPacket();
     Serial.println("Packet out");
+  }
+
+  if(multicastAddress[0] > -1 && multicastAddress[1] > -1 && multicastAddress[2] > -1 && multicastAddress[3] > -1){
+    IPAddress multicastIP(multicastAddress[0], multicastAddress[1], multicastAddress[2], multicastAddress[3]);
+    Udp.joinMulticast(multicastIP);
+    while(Udp.available()){
+      char incomingMessage[100];
+      Udp.parsePacket();
+      Udp.read(incomingMessage, 100);
+      Serial.print("Message: ");
+      Serial.print(incomingMessage);
+    }
   }
 
   delay(500);
