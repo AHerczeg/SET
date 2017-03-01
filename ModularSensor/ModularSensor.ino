@@ -357,7 +357,10 @@ void code(){
   String tempStr = "";
   String timestamp = timestampFormat();
 
-
+  if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
+    readWeatherSi7020();
+  if(activatedSensors & LIGHT_SENSOR)
+    readSi1132Sensor();
 
   if(isLeader){
     String sensorData = tempStr+"{";
@@ -375,7 +378,7 @@ void code(){
       sensorData = tempStr + sensorData + "\\\"sound\\\": " + String((int)readSoundLevel)  + ",";
 
     if(activatedSensors & MOTION_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"motion\\\": " + (int)digitalRead(inputPin);  + ",";
+      sensorData = tempStr + sensorData + "\\\"motion\\\": " + String((int)digitalRead(inputPin));  + ",";
 
     sensorData = tempStr + sensorData.substring(0, sensorData.length()-1) +  "}";
 
@@ -394,20 +397,22 @@ void code(){
   } else {
     String sensorString = "A";
 
-    if(activatedSensors & TEMP_SENSOR)
-      Serial.println("---------");
+    if(activatedSensors & TEMP_SENSOR){
+      SENSOR_VALUE[0].datatype = "temperature";
+      SENSOR_VALUE[0].value = Si7020Temperature;
+    }
 
-    if(activatedSensors & HUM_SENSOR)
-      Serial.println("---------");
+    if(activatedSensors & HUM_SENSOR){
+    }
 
-    if(activatedSensors & LIGHT_SENSOR)
-      Serial.println("---------");
+    if(activatedSensors & LIGHT_SENSOR){
+    }
 
-    if(activatedSensors & SOUND_SENSOR)
-      Serial.println("---------");
+    if(activatedSensors & SOUND_SENSOR){
+    }
 
-    if(activatedSensors & MOTION_SENSOR)
-      Serial.println("---------");
+    if(activatedSensors & MOTION_SENSOR){
+    }
 
     Udp.sendPacket(sensorString, sensorString.length(), leaderIP, 8888);
   }
@@ -551,9 +556,6 @@ String timestampFormat(){
   return timestamp;
 }
 
-void sendDataToServer(){
-
-}
 
 void swarmHandler(const char *event, const char *data)
 {
