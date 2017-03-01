@@ -19,7 +19,6 @@
 #define ACCEL_SENSOR 0x10
 #define MOTION_SENSOR 0x08
 #define SOUND_SENSOR 0x04
-#define INTERNET_BUTTON 0x02
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -98,6 +97,18 @@ String role;
 
 bool emptyFlag = true;
 
+bool averagedMode = true;
+
+typedef struct{
+  IPAddress ip;
+  String data;
+} COMMAND;
+
+typedef struct{
+  String datatype;
+  int value;
+} SENSOR_VALUE[5];
+
 typedef struct {
     uint8_t r;
     uint8_t g;
@@ -111,6 +122,7 @@ uint8_t brightness = 0;
 bool debugFlag = false;
 
 uint8_t sensors = 0x00;
+uint8_t activatedSensors = 0x00;
 
 // UDP Port used for two way communication
 unsigned int localPort = 8888;
@@ -278,6 +290,15 @@ void setup()
 
     readWeatherSi7020();
     readSi1132Sensor();
+    readSoundLevel();
+
+    // TODO CHECK IF CORRECT
+    EEPROM.put(14, sensors);
+
+    // TODO MAKE ADJUSTABLE BY USER
+    activatedSensors = sensors;
+
+    //TODO ADD ADJUSTABLE TEMPER RESISTANCE
 }
 
 void initialiseMPU9150()
@@ -331,38 +352,65 @@ void loop(void)
 // The code is outside of the loop so we can control when it's being ran
 void code(){
 
-  //// ***********************************************************************
-
-  //// powers up sensors
-  digitalWrite(I2CEN, HIGH);
-  digitalWrite(ALGEN, HIGH);
-
-  //// allows sensors time to warm up
-  delay(SENSORDELAY);
-
-  //// ***********************************************************************
-
-  readWeatherSi7020();
-  readSi1132Sensor();
-  double sound = readSoundLevel();
-
   Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
   String tempStr = "";
   String timestamp = timestampFormat();
 
-  String sensorData = tempStr+"{\\\"temperature\\\": " + String(Si7020Temperature) + ", \\\"humidity\\\": " + String(Si7020Humidity) + ", \\\"light\\\": " + String(Si1132Visible) + "}";
 
-  String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
 
-  String responseString = "";
+  if(isLeader){
+    String sensorData = tempStr+"{";
 
-  client.post(path, (const char*) sensorString, &responseString);
+    if(activatedSensors & TEMP_SENSOR)
+      sensorData = tempStr + sensorData + "\\\"temperature\\\": " + String(Si7020Temperature) + ",";
 
-  Serial.println("---------");
-  Serial.println(sensorString);
-  Serial.println(responseString);
+    if(activatedSensors & HUM_SENSOR)
+      sensorData = tempStr + sensorData + "\\\"humidity\\\": " + String(Si7020Humidity)  + ",";
 
+    if(activatedSensors & LIGHT_SENSOR)
+      sensorData = tempStr + sensorData + "\\\"light\\\": " + String(Si1132Visible)  + ",";
+
+    if(activatedSensors & SOUND_SENSOR)
+      sensorData = tempStr + sensorData + "\\\"sound\\\": " + String((int)readSoundLevel)  + ",";
+
+    if(activatedSensors & MOTION_SENSOR)
+      sensorData = tempStr + sensorData + "\\\"motion\\\": " + (int)digitalRead(inputPin);  + ",";
+
+    sensorData = tempStr + sensorData.substring(0, sensorData.length()-1) +  "}";
+
+    //\\\"temperature\\\": " + String(Si7020Temperature) + ", \\\"humidity\\\": " + String(Si7020Humidity) + ", \\\"light\\\": " + String(Si1132Visible) + "}";
+
+    String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
+
+    String responseString = "";
+
+    client.post(path, (const char*) sensorString, &responseString);
+
+    Serial.println("---------");
+    Serial.println(sensorString);
+    Serial.println(responseString);
+
+  } else {
+    String sensorString = "A";
+
+    if(activatedSensors & TEMP_SENSOR)
+      Serial.println("---------");
+
+    if(activatedSensors & HUM_SENSOR)
+      Serial.println("---------");
+
+    if(activatedSensors & LIGHT_SENSOR)
+      Serial.println("---------");
+
+    if(activatedSensors & SOUND_SENSOR)
+      Serial.println("---------");
+
+    if(activatedSensors & MOTION_SENSOR)
+      Serial.println("---------");
+
+    Udp.sendPacket(sensorString, sensorString.length(), leaderIP, 8888);
+  }
   delay(1000);
 }
 
@@ -408,6 +456,7 @@ int readWeatherSi7020()
 ///reads UV, visible and InfraRed light level
 void readSi1132Sensor()
 {
+    // TODO fix
     if((sensors & TEMP_SENSOR) > 0 && (sensors & HUM_SENSOR) > 0)
       sensors = sensors | LIGHT_SENSOR;
     si1132.begin(); //// initialises Si1132
@@ -416,9 +465,14 @@ void readSi1132Sensor()
     Si1132InfraRed = si1132.readIR();
 }
 
+
 //returns sound level measurement in as voltage values (0 to 3.3v)
 float readSoundLevel()
 {
+    // TODO fix
+    if((sensors & TEMP_SENSOR) > 0 && (sensors & HUM_SENSOR) > 0)
+      sensors = sensors | SOUND_SENSOR;
+
     unsigned int sampleWindow = 50; // Sample window width in milliseconds (50 milliseconds = 20Hz)
     unsigned long endWindow = millis() + sampleWindow;  // End of sample window
 
@@ -672,9 +726,6 @@ void debug(){
   }
   if((sensors & SOUND_SENSOR) > 0){
     Serial.println("    SOUND");
-  }
-  if((sensors & INTERNET_BUTTON) > 0){
-    Serial.println("    INTERNET BUTTON");
   }
 
   // Run the main code once, measure runtime
