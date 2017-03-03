@@ -151,6 +151,7 @@ int promoteStart = -1;
 
 Timer timer(10000, promoteSelf, true);
 Timer leaderTimer(5000, setLeader, true);
+Timer SwarmLeaderIP(5000, swarmIP);
 
 byte leaderAddress[4] = {-1, -1, -1, -1};
 byte multicastAddress[4] = {-1, -1, -1, -1};
@@ -162,7 +163,6 @@ IPAddress ownIP = -1;
 
 Thread* serialThread;
 Thread* ledThread;
-Thread* swarmThread;
 Thread* competitionThread;
 Thread* udpThread;
 
@@ -197,29 +197,19 @@ os_thread_return_t ledBlinking(){
   }
 }
 
-os_thread_return_t swarm(){
-  while(isLeader){
-    String ipString = WiFi.localIP();
-    ipString = "" + ipString + ",244.0.0.0";
-    Particle.publish("SwarmLeader", ipString);
-    Serial.println("Sending ip: "+ ipString);
-    delay(5000);
-  }
-}
 
 os_thread_return_t competition(){
   while(promoteStart >= 0){
     char tempArray[100];
     itoa(promoteStart, tempArray, 10);
     String timeString = tempArray;
-    Particle.publish("SwarmCompetition", timeString);
-    delay(300);
+    Particle.publish("SwarmCompetition", timeString, 1500);
+    delay(1000);
   }
 }
 
 os_thread_return_t readUDP(){
   while(isLeader){
-    //Serial.println("Is leader");
     while(Udp.available()){
       char incomingMessage[100];
       int udpSize = Udp.parsePacket();
@@ -300,8 +290,6 @@ void setup()
 
     Particle.subscribe("SwarmCompetition", competitionHandler);
 
-    timer.start();
-
     ownIP = WiFi.localIP();
 
     EEPROM.get(0, rawRole);
@@ -329,7 +317,9 @@ void setup()
 
     //ledThread = new Thread("ledBlinking", ledBlinking);
 
-    serialThread = new Thread("debug", serialListener);
+    //serialThread = new Thread("debug", serialListener);
+
+    Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
     String tempStr = "";
     String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
@@ -357,6 +347,8 @@ void setup()
     activatedSensors = sensors;
 
     //TODO ADD ADJUSTABLE TEMPER RESISTANCE
+
+    timer.start();
 }
 
 void initialiseMPU9150()
@@ -410,8 +402,6 @@ void loop(void)
 // The code is outside of the loop so we can control when it's being ran
 void code(){
 
-  Time.setFormat(TIME_FORMAT_ISO8601_FULL);
-
   String tempStr = "";
   String timestamp = timestampFormat();
 
@@ -420,69 +410,12 @@ void code(){
   if(activatedSensors & LIGHT_SENSOR)
     readSi1132Sensor();
 
-  if(isLeader){
-
-    String sensorData = tempStr+"{";
-
-    if(activatedSensors & TEMP_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"temperature\\\": " + String((Si7020Temperature+sharedValues.sensorValue.temperature)/(sharedValues.temperatureInputs + 1)) + ",";
-
-    if(activatedSensors & HUM_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"humidity\\\": " + String((Si7020Humidity+sharedValues.sensorValue.humidity)/(sharedValues.humidityInputs + 1))  + ",";
-
-    if(activatedSensors & LIGHT_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"light\\\": " + String((Si1132Visible+sharedValues.sensorValue.light)/(sharedValues.lightInputs + 1))  + ",";
-
-    if(activatedSensors & SOUND_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"sound\\\": " + String(((int)readSoundLevel+sharedValues.sensorValue.sound)/(sharedValues.soundInputs + 1))  + ",";
-
-    if(activatedSensors & MOTION_SENSOR)
-      sensorData = tempStr + sensorData + "\\\"motion\\\": " + String(((int)digitalRead(inputPin)+sharedValues.sensorValue.motion)/(sharedValues.motionInputs + 1));  + ",";
-
-    sensorData = tempStr + sensorData.substring(0, sensorData.length()-1) +  "}";
-
-    String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
-
-    String responseString = "";
-
-    client.post(path, (const char*) sensorString);
-
-    sharedValues.temperatureInputs = 0;
-    sharedValues.humidityInputs = 0;
-    sharedValues.lightInputs = 0;
-    sharedValues.soundInputs = 0;
-    sharedValues.motionInputs = 0;
-    sharedValues.sensorValue.temperature = 0;
-    sharedValues.sensorValue.humidity = 0;
-    sharedValues.sensorValue.light = 0;
-    sharedValues.sensorValue.sound = 0;
-    sharedValues.sensorValue.motion = 0;
-
-    Serial.println("---------");
-    //Serial.println(sensorString);
-    //Serial.println(responseString);
-
-  } else {
-
-    if(activatedSensors & TEMP_SENSOR)
-      sensorValue.temperature = Si7020Temperature;
-
-    if(activatedSensors & HUM_SENSOR)
-      sensorValue.humidity = Si7020Humidity;
-
-    if(activatedSensors & LIGHT_SENSOR)
-      sensorValue.light = Si1132Visible;
-
-    if(activatedSensors & SOUND_SENSOR)
-      sensorValue.sound = (int)readSoundLevel;
-
-    if(activatedSensors & MOTION_SENSOR)
-      sensorValue.motion = (int)digitalRead(inputPin);
-
-    char* sensorData = reinterpret_cast<char*>(&sensorValue);
-    Serial.println(Udp.sendPacket(sensorData, sizeof(sensorData), leaderIP, 8888));
-  }
-  delay(1000);
+  //if(isLeader)
+    //leaderData();
+  //else
+    //swarmData();
+  Serial.println(isLeader);
+  delay(3000);
 }
 
 // Read sound measurements
@@ -632,14 +565,27 @@ void swarmHandler(const char *event, const char *data)
     promoteStart = -1;
   }
   String buffer = data;
-  Serial.println(buffer);
+  Serial.println("Incoming swarm data: " + buffer);
   int divider = buffer.indexOf(',');
   ipSplit(buffer.substring(0, divider), 0);
   multicastSplit(buffer.substring(divider + 1), 0);
   if(leaderAddress[0] > -1 && leaderAddress[1] > -1 && leaderAddress[2] > -1 && leaderAddress[3] > -1)
     leaderIP = IPAddress(leaderAddress[0], leaderAddress[1], leaderAddress[2], leaderAddress[3]);
+  Serial.print("LeaderAddress: ");
+  Serial.print(leaderAddress[0]);
+  Serial.print(".");
+  Serial.print(leaderAddress[1]);
+  Serial.print(".");
+  Serial.print(leaderAddress[2]);
+  Serial.print(".");
+  Serial.print(leaderAddress[3]);
+  Serial.println();
   if(isLeader && !(leaderIP == ownIP)){
-    Serial.println("Other leader detected");
+    Serial.print("Other ip: ");
+    Serial.print(leaderIP);
+    Serial.print(" Own ip: ");
+    Serial.print(ownIP);
+    Serial.println("");
     RGB.color(ledColour.r, ledColour.g, ledColour.b);
     isLeader = false;
     timer.reset();
@@ -655,8 +601,8 @@ void competitionHandler(const char *event, const char *data)
     leaderTimer.reset();
     leaderTimer.stop();
     promoteStart = -1;
-    timer.start();
     timer.reset();
+    Serial.println("Stopped competing");
   }
 }
 
@@ -664,7 +610,7 @@ void promoteSelf(){
   promoteStart = Time.now();
   competitionThread = new Thread("competition", competition);
   Serial.println("Promoting self");
-  leaderTimer.start();
+  leaderTimer.reset();
 }
 
 void setLeader(){
@@ -672,15 +618,16 @@ void setLeader(){
   promoteStart = -1;
   RGB.color(255,128,0);
   Serial.println("Set as leader");
-  swarmThread = new Thread("swarm", swarm);
+  SwarmLeaderIP.start();
   udpThread = new Thread("readUDP", readUDP);
 }
 
+// TODO FIX!!!!!
 void ipSplit(String data, int i){
   int index = data.indexOf('.') + 1;
   if(index == 0){
     leaderAddress[i] = atoi(data);
-  } else {
+  } else if(data != "0.0.0"){
     leaderAddress[i] = atoi(data.substring(0, index));
     ipSplit(data.substring(index, data.length()), (i+1));
   }
@@ -693,6 +640,101 @@ void multicastSplit(String data, int i){
   } else {
     multicastAddress[i] = atoi(data.substring(0, index));
     ipSplit(data.substring(index, data.length()), (i+1));
+  }
+}
+
+void leaderData(){
+  Time.setFormat(TIME_FORMAT_ISO8601_FULL);
+
+  String tempStr = "";
+  String timestamp = timestampFormat();
+
+  if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
+    readWeatherSi7020();
+  if(activatedSensors & LIGHT_SENSOR)
+    readSi1132Sensor();
+
+  String sensorData = tempStr+"{";
+
+  if(activatedSensors & TEMP_SENSOR)
+    sensorData = tempStr + sensorData + "\\\"temperature\\\": " + String((Si7020Temperature+sharedValues.sensorValue.temperature)/(sharedValues.temperatureInputs + 1)) + ",";
+
+  if(activatedSensors & HUM_SENSOR)
+    sensorData = tempStr + sensorData + "\\\"humidity\\\": " + String((Si7020Humidity+sharedValues.sensorValue.humidity)/(sharedValues.humidityInputs + 1))  + ",";
+
+  if(activatedSensors & LIGHT_SENSOR)
+    sensorData = tempStr + sensorData + "\\\"light\\\": " + String((Si1132Visible+sharedValues.sensorValue.light)/(sharedValues.lightInputs + 1))  + ",";
+
+  if(activatedSensors & SOUND_SENSOR)
+    sensorData = tempStr + sensorData + "\\\"sound\\\": " + String(((int)readSoundLevel+sharedValues.sensorValue.sound)/(sharedValues.soundInputs + 1))  + ",";
+
+  if(activatedSensors & MOTION_SENSOR)
+    sensorData = tempStr + sensorData + "\\\"motion\\\": " + String(((int)digitalRead(inputPin)+sharedValues.sensorValue.motion)/(sharedValues.motionInputs + 1));  + ",";
+
+  sensorData = tempStr + sensorData.substring(0, sensorData.length()-1) +  "}";
+
+  String sensorString = tempStr+"{\"sensorId\":\"" + deviceID + "\", \"sensorData\":\"" + sensorData + "\",\"timestamp\":\"" + timestamp + "\"}";
+
+  String responseString = "";
+
+  client.post(path, (const char*) sensorString);
+
+  sharedValues.temperatureInputs = 0;
+  sharedValues.humidityInputs = 0;
+  sharedValues.lightInputs = 0;
+  sharedValues.soundInputs = 0;
+  sharedValues.motionInputs = 0;
+  sharedValues.sensorValue.temperature = 0;
+  sharedValues.sensorValue.humidity = 0;
+  sharedValues.sensorValue.light = 0;
+  sharedValues.sensorValue.sound = 0;
+  sharedValues.sensorValue.motion = 0;
+
+  Serial.println("---------");
+  //Serial.println(sensorString);
+  //Serial.println(responseString);
+}
+
+void swarmData(){
+  Time.setFormat(TIME_FORMAT_ISO8601_FULL);
+
+  String tempStr = "";
+  String timestamp = timestampFormat();
+
+  if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
+    readWeatherSi7020();
+  if(activatedSensors & LIGHT_SENSOR)
+    readSi1132Sensor();
+
+  if(activatedSensors & TEMP_SENSOR)
+    sensorValue.temperature = Si7020Temperature;
+
+  if(activatedSensors & HUM_SENSOR)
+    sensorValue.humidity = Si7020Humidity;
+
+  if(activatedSensors & LIGHT_SENSOR)
+    sensorValue.light = Si1132Visible;
+
+  if(activatedSensors & SOUND_SENSOR)
+    sensorValue.sound = (int)readSoundLevel;
+
+  if(activatedSensors & MOTION_SENSOR)
+    sensorValue.motion = (int)digitalRead(inputPin);
+
+  char* sensorData = reinterpret_cast<char*>(&sensorValue);
+  Serial.print("UDP size: ");
+  Serial.print(sizeof(sensorData));
+  Serial.print(" UDP result");
+  Serial.print(Udp.sendPacket(sensorData, sizeof(sensorData), leaderIP, 8888));
+  Serial.println("");
+}
+
+void swarmIP(){
+  if(isLeader){
+    String ipString = ownIP;
+    ipString = "" + ipString + ",244.0.0.0";
+    Particle.publish("SwarmLeader", ipString, 5000);
+    Serial.println("Sending ip: "+ ipString);
   }
 }
 
