@@ -15,7 +15,7 @@ InternetButton b = InternetButton();
 
 RestClient client = RestClient("sccug-330-05.lancs.ac.uk",5000);
 
-const char* path = "/lights/on";
+const char* path = "/button";
 
 typedef struct {
     uint8_t r;
@@ -175,7 +175,7 @@ void code(){
   delay(5000);
 }
 
-int buttonPressed(){
+void buttonPressed(){
   uint8_t button = 0x00;
   while(!b.allButtonsOff()){
     if(b.buttonOn(1))
@@ -188,6 +188,7 @@ int buttonPressed(){
       button = button | 0x08;
     delay(100);
   }
+  client.post(path, (const char*) button);
   return (int) button;
 }
 
