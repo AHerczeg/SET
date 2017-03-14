@@ -40,7 +40,7 @@ void setup()
 
 void loop(void)
 {
-
+  /*
   Serial.println(WiFi.localIP());
 
   while(Udp.available()){
@@ -63,8 +63,25 @@ void loop(void)
     Serial.print("\nShared motion: ");
     Serial.print(sValue.motion);
   }
-
+  */
   Serial.println("--------------------------------------");
 
+
+  commandParser("1;2;3;4;5;6;7;8;9;10");
+
   delay(1000);
+}
+
+void commandParser(String command){
+  int index = command.indexOf(';') + 1;
+  if(index == 0){
+    Serial.print("\nCommand: ");
+    Serial.print(atoi(command));
+    Serial.print("\n");
+  } else {
+    Serial.print("\nCommand: ");
+    Serial.print(atoi(command.substring(0, index)));
+    Serial.print("\n");
+    commandParser(command.substring(index, command.length()));
+  }
 }

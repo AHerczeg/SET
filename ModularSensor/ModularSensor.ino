@@ -738,6 +738,45 @@ void swarmIP(){
   }
 }
 
+void commandParser(String command){
+  int index = command.indexOf(';') + 1;
+  if(index == 0){
+    Serial.print("\nCommand: ");
+    Serial.print(atoi(command));
+    Serial.print("\n");
+  } else {
+    Serial.print("\nCommand: ");
+    Serial.print(atoi(command.substring(0, index)));
+    Serial.print("\n");
+    commandParser(command.substring(index, command.length()));
+  }
+}
+
+void commandSwitch(int command){
+  switch(command){
+    case 1: readMPU9150();
+            break;
+
+    case 2: readWeatherSi7020();
+            break;
+
+    case 3: readSi1132Sensor();
+            break;
+
+    case 4: promoteSelf();
+            break;
+
+    case 5: leaderData();
+            break;
+
+    case 6: swarmData();
+            break;
+
+    case 7: debug();
+            break;
+  }
+}
+
 // Start debugging
 void debug(){
 
