@@ -15,7 +15,7 @@ unsigned int localPort = 8888;
 
 UDP Udp;
 
-byte leaderAddress[4] = {192,  168, 0, 102};
+byte leaderAddress[4] = {192,  168, 0, 57};
 IPAddress leaderIP = -1;
 
 void setup()
@@ -38,11 +38,8 @@ void setup()
 void loop(void)
 {
   Serial.println(leaderIP);
-  char* sensorData = reinterpret_cast<char*>(&sensorValue);
-  Serial.print("UDP size: ");
-  Serial.print(sizeof(sensorData));
-  Serial.print(" UDP result ");
+  String sensorData = "temp:10;hum:20;light:30;sound:40.5;motion:61.76";
   Serial.print(Udp.sendPacket(sensorData, sizeof(sensorData), leaderIP, 8888));
   Serial.println("");
-  delay(1000);
+  delay(3000);
 }
