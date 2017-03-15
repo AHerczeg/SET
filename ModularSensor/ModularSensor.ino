@@ -210,36 +210,15 @@ os_thread_return_t competition(){
 
 os_thread_return_t readUDP(){
   while(isLeader){
+    int udpSize = Udp.parsePacket();
     while(Udp.available()){
-      char incomingMessage[100];
-      int udpSize = Udp.parsePacket();
+      char incomingMessage[30];
       Udp.read(incomingMessage, udpSize);
-      Serial.print("Message: ");
-      Serial.print(incomingMessage);
-      SENSOR_VALUE sValue;
-      memcpy(&sValue, incomingMessage, sizeof(sValue));
-      if(sValue.temperature != NULL){
-        sharedValues.temperatureInputs += 1;
-        sharedValues.sensorValue.temperature += sValue.temperature;
-      }
-      if(sValue.humidity != NULL){
-        sharedValues.humidityInputs += 1;
-        sharedValues.sensorValue.humidity += sValue.humidity;
-      }
-      if(sValue.light != NULL){
-        sharedValues.lightInputs += 1;
-        sharedValues.sensorValue.light += sValue.light;
-      }
-      if(sValue.sound != NULL){
-        sharedValues.soundInputs += 1;
-        sharedValues.sensorValue.sound += sValue.sound;
-      }
-      if(sValue.motion != NULL){
-        sharedValues.motionInputs += 1;
-        sharedValues.sensorValue.motion += sValue.motion;
-      }
+      Serial.print("  Message: ");
+      Serial.print(String(incomingMessage));
+      Serial.print("\n");
+      dataParser(incomingMessage);
     }
-    delay(300);
   }
 }
 
@@ -698,7 +677,6 @@ void leaderData(){
 void swarmData(){
   Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
-  String tempStr = "";
   String timestamp = timestampFormat();
 
   if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
@@ -706,26 +684,26 @@ void swarmData(){
   if(activatedSensors & LIGHT_SENSOR)
     readSi1132Sensor();
 
+  String tempStr = "";
+  String sensorData = "";
+
   if(activatedSensors & TEMP_SENSOR)
-    sensorValue.temperature = Si7020Temperature;
+    sensorData = sensorData + tempStr + Si7020Temperature;
 
   if(activatedSensors & HUM_SENSOR)
-    sensorValue.humidity = Si7020Humidity;
+    sensorData = sensorData + tempStr + Si7020Humidity;
 
   if(activatedSensors & LIGHT_SENSOR)
-    sensorValue.light = Si1132Visible;
+    sensorData = sensorData + tempStr + Si1132Visible;
 
   if(activatedSensors & SOUND_SENSOR)
-    sensorValue.sound = (int)readSoundLevel;
+    sensorData = sensorData + tempStr + (int)readSoundLevel;
 
   if(activatedSensors & MOTION_SENSOR)
-    sensorValue.motion = (int)digitalRead(inputPin);
+    sensorData = sensorData + tempStr + (int)digitalRead(inputPin);
 
-  char* sensorData = reinterpret_cast<char*>(&sensorValue);
-  Serial.print("UDP size: ");
-  Serial.print(sizeof(sensorData));
   Serial.print(" UDP result");
-  Serial.print(Udp.sendPacket(sensorData, sizeof(sensorData), leaderIP, 8888));
+  Serial.print(Udp.sendPacket(sensorData, (sensorData.length()+1), leaderIP, 8888));
   Serial.println("");
 }
 
@@ -774,6 +752,50 @@ void commandSwitch(int command){
 
     case 7: debug();
             break;
+  }
+}
+
+void dataParser(String data){
+  int index = data.indexOf(';') + 1;
+  if(index == 0){
+    Serial.print("\ndata: ");
+    Serial.print(data);
+    Serial.print("\n");
+    dataSwitch(data);
+  } else {
+    Serial.print("\ndata: ");
+    Serial.print(data.substring(0, index));
+    Serial.print("\n");
+    dataSwitch(data.substring(0, index));
+    dataParser(data.substring(index, data.length()));
+  }
+}
+
+
+void dataSwitch(String data){
+  int index = data.indexOf(':') + 1;
+  switch(atoi(data.substring(0, index))){
+    case 1: sharedValues.temperatureInputs += 1;
+            sharedValues.sensorValue.temperature += atoi(data.substring(index, data.length()));
+            break;
+
+    case 2: sharedValues.humidityInputs += 1;
+            sharedValues.sensorValue.humidity += atoi(data.substring(index, data.length()));
+            break;
+
+    case 3: sharedValues.lightInputs += 1;
+            sharedValues.sensorValue.light += atoi(data.substring(index, data.length()));
+            break;
+
+    case 4: sharedValues.soundInputs += 1;
+            sharedValues.sensorValue.sound += atoi(data.substring(index, data.length()));
+            break;
+
+    case 5: sharedValues.motionInputs += 1;
+            sharedValues.sensorValue.motion += atoi(data.substring(index, data.length()));
+            break;
+
+    default: Serial.println("ERROR");
   }
 }
 

@@ -54,6 +54,7 @@ void loop(void)
     int i = 0;
     Serial.print(String(incomingMessage));
     Serial.print("\n");
+    dataParser(incomingMessage);
     /*
     SENSOR_VALUE sValue;
     memcpy(&sValue, incomingMessage, sizeof(sValue));
@@ -74,4 +75,43 @@ void loop(void)
   Serial.println("--------------------------------------");
 
   delay(1000);
+}
+
+void dataParser(String data){
+  int index = data.indexOf(';') + 1;
+  if(index == 0){
+    Serial.print("\ndata: ");
+    Serial.print(data);
+    Serial.print("\n");
+    dataSwitch(data);
+  } else {
+    Serial.print("\ndata: ");
+    Serial.print(data.substring(0, index));
+    Serial.print("\n");
+    dataSwitch(data.substring(0, index));
+    dataParser(data.substring(index, data.length()));
+  }
+}
+
+
+void dataSwitch(String data){
+  int index = data.indexOf(':') + 1;
+  switch(atoi(data.substring(0, index))){
+    case 1:  Serial.println(data.substring(index, data.length()));
+                  break;
+
+    case 2: Serial.println(data.substring(index, data.length()));
+                break;
+
+    case 3: Serial.println(data.substring(index, data.length()));
+                  break;
+
+    case 4: Serial.println(data.substring(index, data.length()));
+                  break;
+
+    case 5:  Serial.println(data.substring(index, data.length()));
+                    break;
+
+    default: Serial.println("ERROR");
+  }
 }
