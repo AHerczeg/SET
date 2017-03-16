@@ -17,8 +17,9 @@
 #define HUM_SENSOR 0x40
 #define LIGHT_SENSOR 0x20
 #define ACCEL_SENSOR 0x10
-#define MOTION_SENSOR 0x08
-#define SOUND_SENSOR 0x04
+#define SOUND_SENSOR 0x08
+#define MOTION_SENSOR 0x04
+
 
 int SENSORDELAY = 500;  //// 500; //3000; // milliseconds (runs x1)
 int EVENTSDELAY = 1000; //// milliseconds (runs x10)
@@ -252,6 +253,10 @@ void setup()
     // opens serial over USB
     Serial.begin(9600);
 
+    Wire.setSpeed(CLOCK_SPEED_400KHZ);
+
+    Wire.begin();  // Start up I2C, required for LSM303 communication
+
     Udp.begin(localPort);
 
     // initialises the IO pins
@@ -290,7 +295,9 @@ void setup()
 
     RGB.control(true);
 
-    RGB.color(ledColour.r, ledColour.g, ledColour.b);
+    //RGB.color(ledColour.r, ledColour.g, ledColour.b);
+
+    RGB.color(0, 0, 255);
 
     RGB.brightness(brightness);
 
@@ -300,13 +307,6 @@ void setup()
 
     Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
-    String tempStr = "";
-    String sensorString = tempStr+"{\"id\":\"" + deviceID + "\", \"role\":\"" + role + "\",\"owner\":\"" + "Adam" + "\",\"status\":\"" + "On" + "\"}";
-    client.post(path, (const char*) sensorString);
-
-    readWeatherSi7020();
-    readSi1132Sensor();
-    readSoundLevel();
 
     sharedValues.temperatureInputs = 0;
     sharedValues.humidityInputs = 0;
@@ -322,12 +322,23 @@ void setup()
     // TODO CHECK IF CORRECT
     EEPROM.put(14, sensors);
 
+    digitalWrite(I2CEN, HIGH);
+    digitalWrite(ALGEN, HIGH);
+
+    delay(SENSORDELAY);
+
+    readWeatherSi7020();
+    readSi1132Sensor();
+    readSoundLevel();
+
     // TODO MAKE ADJUSTABLE BY USER
     activatedSensors = sensors;
 
-    //TODO ADD ADJUSTABLE TEMPER RESISTANCE
-
     timer.start();
+}
+
+void sensorSetup(){
+
 }
 
 void initialiseMPU9150()
@@ -381,19 +392,19 @@ void loop(void)
 // The code is outside of the loop so we can control when it's being ran
 void code(){
 
-  String tempStr = "";
-  String timestamp = timestampFormat();
 
-  if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
-    readWeatherSi7020();
-  if(activatedSensors & LIGHT_SENSOR)
-    readSi1132Sensor();
+  Serial.print("Active sensors: ");
+  Serial.println(int(activatedSensors));
 
-  //if(isLeader)
-    //leaderData();
-  //else
-    //swarmData();
-  Serial.println(isLeader);
+  Serial.println("Code start");
+
+  if(isLeader)
+    leaderData();
+  else
+    swarmData();
+
+
+
   delay(3000);
 }
 
@@ -628,12 +639,18 @@ void leaderData(){
   String tempStr = "";
   String timestamp = timestampFormat();
 
+  digitalWrite(I2CEN, HIGH);
+  digitalWrite(ALGEN, HIGH);
+
+  delay(SENSORDELAY);
+
   if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
     readWeatherSi7020();
   if(activatedSensors & LIGHT_SENSOR)
     readSi1132Sensor();
 
   String sensorData = tempStr+"{";
+
 
   if(activatedSensors & TEMP_SENSOR)
     sensorData = tempStr + sensorData + "\\\"temperature\\\": " + String((Si7020Temperature+sharedValues.sensorValue.temperature)/(sharedValues.temperatureInputs + 1)) + ",";
@@ -645,7 +662,7 @@ void leaderData(){
     sensorData = tempStr + sensorData + "\\\"light\\\": " + String((Si1132Visible+sharedValues.sensorValue.light)/(sharedValues.lightInputs + 1))  + ",";
 
   if(activatedSensors & SOUND_SENSOR)
-    sensorData = tempStr + sensorData + "\\\"sound\\\": " + String(((int)readSoundLevel+sharedValues.sensorValue.sound)/(sharedValues.soundInputs + 1))  + ",";
+    sensorData = tempStr + sensorData + "\\\"sound\\\": " + String(((int)readSoundLevel()+sharedValues.sensorValue.sound)/(sharedValues.soundInputs + 1))  + ",";
 
   if(activatedSensors & MOTION_SENSOR)
     sensorData = tempStr + sensorData + "\\\"motion\\\": " + String(((int)digitalRead(inputPin)+sharedValues.sensorValue.motion)/(sharedValues.motionInputs + 1));  + ",";
@@ -656,7 +673,7 @@ void leaderData(){
 
   String responseString = "";
 
-  client.post(path, (const char*) sensorString);
+  //client.post(path, (const char*) sensorString);
 
   sharedValues.temperatureInputs = 0;
   sharedValues.humidityInputs = 0;
@@ -669,42 +686,58 @@ void leaderData(){
   sharedValues.sensorValue.sound = 0;
   sharedValues.sensorValue.motion = 0;
 
-  Serial.println("---------");
-  //Serial.println(sensorString);
-  //Serial.println(responseString);
+
+  Serial.print("Sensor string: ");
+  Serial.println(sensorString);
+  Serial.println("----------------------------------------------------");
+
 }
 
 void swarmData(){
-  Time.setFormat(TIME_FORMAT_ISO8601_FULL);
 
-  String timestamp = timestampFormat();
+  digitalWrite(I2CEN, HIGH);
+  digitalWrite(ALGEN, HIGH);
 
-  if((activatedSensors & TEMP_SENSOR) || activatedSensors & HUM_SENSOR)
+  delay(SENSORDELAY);
+
+  if((activatedSensors & TEMP_SENSOR) > 0 || (activatedSensors & HUM_SENSOR) > 0)
     readWeatherSi7020();
-  if(activatedSensors & LIGHT_SENSOR)
+
+
+  if((activatedSensors & LIGHT_SENSOR) > 0)
     readSi1132Sensor();
 
   String tempStr = "";
   String sensorData = "";
 
-  if(activatedSensors & TEMP_SENSOR)
-    sensorData = sensorData + tempStr + Si7020Temperature;
+  if((activatedSensors & TEMP_SENSOR)  > 0)
+    sensorData = sensorData + tempStr + "1:" + Si7020Temperature + ";";
 
-  if(activatedSensors & HUM_SENSOR)
-    sensorData = sensorData + tempStr + Si7020Humidity;
+  Serial.println("  2");
+  if((activatedSensors & HUM_SENSOR)  > 0)
+    sensorData = sensorData + tempStr + "2:" + Si7020Humidity + ";";
 
-  if(activatedSensors & LIGHT_SENSOR)
-    sensorData = sensorData + tempStr + Si1132Visible;
+  Serial.println("  3");
+  if((activatedSensors & LIGHT_SENSOR)  > 0)
+    sensorData = sensorData + tempStr + "3:" + Si1132Visible + ";";
 
-  if(activatedSensors & SOUND_SENSOR)
-    sensorData = sensorData + tempStr + (int)readSoundLevel;
+  Serial.print("  4: ");
+  if((activatedSensors & SOUND_SENSOR)  > 0)
+    sensorData = sensorData + tempStr + "4:" + (int)readSoundLevel() + ";";
 
-  if(activatedSensors & MOTION_SENSOR)
-    sensorData = sensorData + tempStr + (int)digitalRead(inputPin);
+  Serial.print("  5: ");
+  if((activatedSensors & MOTION_SENSOR)  > 0)
+    sensorData = sensorData + tempStr + "5:" + (int)digitalRead(inputPin) + ";";
 
-  Serial.print(" UDP result");
-  Serial.print(Udp.sendPacket(sensorData, (sensorData.length()+1), leaderIP, 8888));
-  Serial.println("");
+  sensorData = sensorData.substring(0, sensorData.length());
+
+  Serial.print("Sensor data: ");
+  Serial.println(sensorData);
+  if(sensorData.length() > 0){
+    Serial.print(" UDP result: ");
+    Serial.print(Udp.sendPacket(sensorData, (sensorData.length()+1), leaderIP, 8888));
+    Serial.println("");
+  }
 }
 
 void swarmIP(){
@@ -752,6 +785,27 @@ void commandSwitch(int command){
 
     case 7: debug();
             break;
+
+    case 8: activatedSensors = (activatedSensors & !(TEMP_SENSOR));
+            break;
+
+    case 9: activatedSensors = (activatedSensors & !(HUM_SENSOR));
+            break;
+
+    case 10: activatedSensors = (activatedSensors & !(LIGHT_SENSOR));
+             break;
+
+    case 11: activatedSensors = (activatedSensors & !(SOUND_SENSOR));
+             break;
+
+    case 12: activatedSensors = (activatedSensors & !(MOTION_SENSOR));
+             break;
+
+    case 13: activatedSensors = sensors;
+             break;
+
+    default:  Serial.print("<ERROR> Command received:");
+              Serial.println(command);
   }
 }
 
@@ -795,7 +849,8 @@ void dataSwitch(String data){
             sharedValues.sensorValue.motion += atoi(data.substring(index, data.length()));
             break;
 
-    default: Serial.println("ERROR");
+    default:  Serial.print("<DATA ERROR> Data received: ");
+              Serial.println(atoi(data.substring(0, index)));
   }
 }
 
